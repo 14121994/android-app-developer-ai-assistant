@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#0f172a" flood-opacity="0.13"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+    <linearGradient id="tealBlue" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="night" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="ember" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ea580c"/>
+      <stop offset="1" stop-color="#be123c"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1600" height="1000" rx="0" fill="#f6f8fb" stroke="none" opacity="1"/>
+  
+      <rect x="70" y="58" width="1460" height="884" rx="24" fill="#fbfbfc" stroke="#d7dde5" opacity="1"/>
+      <text x="116" y="126" fill="#111827" font-size="34" font-weight="900" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Kanban Agent</text>
+      <text x="116" y="158" fill="#64748b" font-size="17" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Android tasks move from request to verified result</text>
+      <rect x="1140" y="106" width="160" height="34" rx="17" fill="#dcfce7" stroke="none" opacity="1"/><text x="1157" y="129" fill="#15803d" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Workspace scanned</text>
+      <rect x="1316" y="106" width="104" height="34" rx="17" fill="#eef2ff" stroke="none" opacity="1"/><text x="1333" y="129" fill="#4338ca" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">5 stages</text>
+      
+          <rect x="116" y="204" width="250" height="650" rx="18" fill="#f1f5f9" stroke="#dbe3ea" opacity="1"/>
+          <text x="136" y="248" fill="#111827" font-size="22" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Request</text>
+          
+              <rect x="134" y="286" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="154" y="326" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Login flow</text>
+              <text x="154" y="354" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Auth screen + validation</text>
+              <rect x="154" y="374" width="84" height="34" rx="17" fill="#ecfdf5" stroke="none" opacity="1"/><text x="171" y="397" fill="#047857" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">MVP</text>
+            
+              <rect x="134" y="444" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="154" y="484" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Gradle files</text>
+              <text x="154" y="512" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Dependencies + Manifest</text>
+              <rect x="154" y="532" width="84" height="34" rx="17" fill="#ecfdf5" stroke="none" opacity="1"/><text x="171" y="555" fill="#047857" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Safe</text>
+            
+              <rect x="134" y="602" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="154" y="642" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">ViewModel</text>
+              <text x="154" y="670" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">State + test surface</text>
+              <rect x="154" y="690" width="84" height="34" rx="17" fill="#ecfdf5" stroke="none" opacity="1"/><text x="171" y="713" fill="#047857" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Code</text>
+            
+        
+          <rect x="406" y="204" width="250" height="650" rx="18" fill="#f1f5f9" stroke="#dbe3ea" opacity="1"/>
+          <text x="426" y="248" fill="#111827" font-size="22" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Inspect</text>
+          
+              <rect x="424" y="286" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="444" y="326" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Diff preview</text>
+              <text x="444" y="354" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Scoped changes</text>
+              <rect x="444" y="374" width="84" height="34" rx="17" fill="#ecfdf5" stroke="none" opacity="1"/><text x="461" y="397" fill="#047857" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Gate</text>
+            
+              <rect x="424" y="444" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="444" y="484" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Unit tests</text>
+              <text x="444" y="512" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Local JVM suite</text>
+              <rect x="444" y="532" width="84" height="34" rx="17" fill="#ecfdf5" stroke="none" opacity="1"/><text x="461" y="555" fill="#047857" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Test</text>
+            
+              <rect x="424" y="602" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="444" y="642" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">ADB replay</text>
+              <text x="444" y="670" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Launch + screenshot</text>
+              <rect x="444" y="690" width="84" height="34" rx="17" fill="#ecfdf5" stroke="none" opacity="1"/><text x="461" y="713" fill="#047857" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Device</text>
+            
+        
+          <rect x="696" y="204" width="250" height="650" rx="18" fill="#f1f5f9" stroke="#dbe3ea" opacity="1"/>
+          <text x="716" y="248" fill="#111827" font-size="22" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Patch</text>
+          
+              <rect x="714" y="286" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="734" y="326" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Build health</text>
+              <text x="734" y="354" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">assembleDebug</text>
+              <rect x="734" y="374" width="84" height="34" rx="17" fill="#eff6ff" stroke="none" opacity="1"/><text x="751" y="397" fill="#1d4ed8" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Build</text>
+            
+              <rect x="714" y="444" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="734" y="484" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Logcat</text>
+              <text x="734" y="512" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Crash-free pass</text>
+              <rect x="734" y="532" width="84" height="34" rx="17" fill="#eff6ff" stroke="none" opacity="1"/><text x="751" y="555" fill="#1d4ed8" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Logs</text>
+            
+              <rect x="714" y="602" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="734" y="642" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Screenshots</text>
+              <text x="734" y="670" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Layout review</text>
+              <rect x="734" y="690" width="84" height="34" rx="17" fill="#eff6ff" stroke="none" opacity="1"/><text x="751" y="713" fill="#1d4ed8" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">UI</text>
+            
+        
+          <rect x="986" y="204" width="250" height="650" rx="18" fill="#f1f5f9" stroke="#dbe3ea" opacity="1"/>
+          <text x="1006" y="248" fill="#111827" font-size="22" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Verify</text>
+          
+              <rect x="1004" y="286" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="1024" y="326" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Summary</text>
+              <text x="1024" y="354" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Files + results</text>
+              <rect x="1024" y="374" width="84" height="34" rx="17" fill="#eff6ff" stroke="none" opacity="1"/><text x="1041" y="397" fill="#1d4ed8" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Done</text>
+            
+              <rect x="1004" y="444" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="1024" y="484" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Next action</text>
+              <text x="1024" y="512" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Open PR notes</text>
+              <rect x="1024" y="532" width="84" height="34" rx="17" fill="#eff6ff" stroke="none" opacity="1"/><text x="1041" y="555" fill="#1d4ed8" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Ship</text>
+            
+              <rect x="1004" y="602" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="1024" y="642" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Memory</text>
+              <text x="1024" y="670" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Persist prefs</text>
+              <rect x="1024" y="690" width="84" height="34" rx="17" fill="#eff6ff" stroke="none" opacity="1"/><text x="1041" y="713" fill="#1d4ed8" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Core</text>
+            
+        
+          <rect x="1276" y="204" width="250" height="650" rx="18" fill="#f1f5f9" stroke="#dbe3ea" opacity="1"/>
+          <text x="1296" y="248" fill="#111827" font-size="22" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Report</text>
+          
+              <rect x="1294" y="286" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="1314" y="326" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Coverage</text>
+              <text x="1314" y="354" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Risks listed</text>
+              <rect x="1314" y="374" width="84" height="34" rx="17" fill="#fef3c7" stroke="none" opacity="1"/><text x="1331" y="397" fill="#a16207" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">QA</text>
+            
+              <rect x="1294" y="444" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="1314" y="484" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Release</text>
+              <text x="1314" y="512" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Ready check</text>
+              <rect x="1314" y="532" width="84" height="34" rx="17" fill="#fef3c7" stroke="none" opacity="1"/><text x="1331" y="555" fill="#a16207" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Later</text>
+            
+              <rect x="1294" y="602" width="214" height="118" rx="14" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+              <text x="1314" y="642" fill="#111827" font-size="20" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Archive</text>
+              <text x="1314" y="670" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Undo point kept</text>
+              <rect x="1314" y="690" width="84" height="34" rx="17" fill="#fef3c7" stroke="none" opacity="1"/><text x="1331" y="713" fill="#a16207" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Safe</text>
+            
+        
+    
+</svg>

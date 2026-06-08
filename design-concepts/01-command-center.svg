@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#0f172a" flood-opacity="0.13"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+    <linearGradient id="tealBlue" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="night" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="ember" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ea580c"/>
+      <stop offset="1" stop-color="#be123c"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1600" height="1000" rx="0" fill="#f6f8fb" stroke="none" opacity="1"/>
+  
+      <rect x="90" y="70" width="1420" height="860" rx="22" fill="#ffffff" stroke="#dbe3ea" opacity="1"/>
+      <rect x="90" y="70" width="1420" height="72" rx="22" fill="#f8fafc" stroke="none" opacity="1"/>
+      <circle cx="130" cy="106" r="8" fill="#ff5f57" stroke="none" opacity="1"/><circle cx="154" cy="106" r="8" fill="#ffbd2e" stroke="none" opacity="1"/><circle cx="178" cy="106" r="8" fill="#28c840" stroke="none" opacity="1"/>
+      <text x="220" y="116" fill="#0f172a" font-size="22" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Android Dev Agent</text>
+      <rect x="1250" y="88" width="128" height="34" rx="17" fill="#dcfce7" stroke="none" opacity="1"/><text x="1267" y="111" fill="#15803d" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Gradle ready</text>
+      <rect x="1392" y="88" width="132" height="34" rx="17" fill="#dbeafe" stroke="none" opacity="1"/><text x="1409" y="111" fill="#1d4ed8" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">89% confidence</text>
+      <line x1="90" y1="142" x2="1510" y2="142" stroke="#e2e8f0" stroke-width="1" opacity="1"/>
+      <rect x="90" y="142" width="270" height="788" rx="0" fill="#f8fafc" stroke="none" opacity="1"/>
+      <rect x="126" y="184" width="202" height="42" rx="8" fill="#e8f4f2" stroke="none" opacity="1"/><circle cx="148" cy="205" r="8" fill="#0f766e" stroke="none" opacity="1"/><text x="168" y="210" fill="#0f766e" font-size="18" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Plan</text><circle cx="148" cy="261" r="8" fill="#94a3b8" stroke="none" opacity="1"/><text x="168" y="266" fill="#475569" font-size="18" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Workspace</text><circle cx="148" cy="317" r="8" fill="#94a3b8" stroke="none" opacity="1"/><text x="168" y="322" fill="#475569" font-size="18" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Android Tools</text><circle cx="148" cy="373" r="8" fill="#94a3b8" stroke="none" opacity="1"/><text x="168" y="378" fill="#475569" font-size="18" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Output</text><circle cx="148" cy="429" r="8" fill="#94a3b8" stroke="none" opacity="1"/><text x="168" y="434" fill="#475569" font-size="18" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Catalog</text>
+      <rect x="388" y="176" width="646" height="188" rx="16" fill="#f9fafb" stroke="#e5e7eb" opacity="1"/>
+      <text x="420" y="222" fill="#111827" font-size="24" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Build login flow</text><text x="420" y="254" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Create screen, ViewModel validation, tests, emulator check</text>
+      <rect x="420" y="272" width="92" height="34" rx="17" fill="#ecfeff" stroke="none" opacity="1"/><text x="437" y="295" fill="#0e7490" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Kotlin</text>
+      <rect x="522" y="272" width="138" height="34" rx="17" fill="#eef2ff" stroke="none" opacity="1"/><text x="539" y="295" fill="#4338ca" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Compose-ready</text>
+      <rect x="670" y="272" width="116" height="34" rx="17" fill="#fef3c7" stroke="none" opacity="1"/><text x="687" y="295" fill="#a16207" font-size="15" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Safe patch</text>
+      <rect x="420" y="326" width="560" height="10" rx="5" fill="#e5e7eb" stroke="none" opacity="1"/><rect x="420" y="326" width="498" height="10" rx="5" fill="#0f766e" stroke="none" opacity="1"/>
+      <rect x="1060" y="176" width="392" height="188" rx="16" fill="#0f172a" stroke="none" opacity="1"/>
+      <text x="1090" y="224" fill="#7dd3fc" font-size="18" font-weight="800" font-family="'SF Mono', Menlo, Consolas, monospace">$ ./gradlew testDebugUnitTest</text><text x="1090" y="255" fill="#d1fae5" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">&gt; 18 tests passed</text><text x="1090" y="286" fill="#d1fae5" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">&gt; assembleDebug up-to-date</text><text x="1090" y="317" fill="#d1fae5" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">&gt; emulator screenshot queued</text>
+      <rect x="388" y="396" width="500" height="484" rx="16" fill="#ffffff" stroke="#e5e7eb" opacity="1"/>
+      <text x="420" y="440" fill="#111827" font-size="24" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Execution Loop</text><text x="420" y="472" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Agent stages</text>
+      
+        <circle cx="438" cy="505" r="13" fill="#0f766e" stroke="none" opacity="1"/>
+        <line x1="438" y1="518" x2="438" y2="547" stroke="#cbd5e1" stroke-width="3" opacity="1"/>
+        <text x="466" y="512" fill="#1f2937" font-size="18" font-weight="750" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Scan workspace</text>
+        <text x="750" y="512" fill="#0f766e" font-size="14" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">done</text>
+      
+        <circle cx="438" cy="560" r="13" fill="#0f766e" stroke="none" opacity="1"/>
+        <line x1="438" y1="573" x2="438" y2="602" stroke="#cbd5e1" stroke-width="3" opacity="1"/>
+        <text x="466" y="567" fill="#1f2937" font-size="18" font-weight="750" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Design UI state</text>
+        <text x="750" y="567" fill="#0f766e" font-size="14" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">done</text>
+      
+        <circle cx="438" cy="615" r="13" fill="#2563eb" stroke="none" opacity="1"/>
+        <line x1="438" y1="628" x2="438" y2="657" stroke="#cbd5e1" stroke-width="3" opacity="1"/>
+        <text x="466" y="622" fill="#1f2937" font-size="18" font-weight="750" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Patch files</text>
+        <text x="750" y="622" fill="#64748b" font-size="14" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">queued</text>
+      
+        <circle cx="438" cy="670" r="13" fill="#2563eb" stroke="none" opacity="1"/>
+        <line x1="438" y1="683" x2="438" y2="712" stroke="#cbd5e1" stroke-width="3" opacity="1"/>
+        <text x="466" y="677" fill="#1f2937" font-size="18" font-weight="750" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Run Gradle</text>
+        <text x="750" y="677" fill="#64748b" font-size="14" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">queued</text>
+      
+        <circle cx="438" cy="725" r="13" fill="#2563eb" stroke="none" opacity="1"/>
+        <line x1="438" y1="738" x2="438" y2="767" stroke="#cbd5e1" stroke-width="3" opacity="1"/>
+        <text x="466" y="732" fill="#1f2937" font-size="18" font-weight="750" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Inspect device</text>
+        <text x="750" y="732" fill="#64748b" font-size="14" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">queued</text>
+      
+        <circle cx="438" cy="780" r="13" fill="#2563eb" stroke="none" opacity="1"/>
+        
+        <text x="466" y="787" fill="#1f2937" font-size="18" font-weight="750" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Summarize</text>
+        <text x="750" y="787" fill="#64748b" font-size="14" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">queued</text>
+      
+      <rect x="920" y="396" width="532" height="484" rx="16" fill="#ffffff" stroke="#e5e7eb" opacity="1"/>
+      <text x="952" y="440" fill="#111827" font-size="24" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Workspace Signals</text><text x="952" y="472" fill="#64748b" font-size="15" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Live Android project context</text>
+      
+        <rect x="952" y="488" width="204" height="54" rx="10" fill="#ecfdf5" stroke="none" opacity="1"/>
+        <text x="970" y="522" fill="#047857" font-size="17" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Manifest found</text>
+      
+        <rect x="1182" y="488" width="204" height="54" rx="10" fill="#eff6ff" stroke="none" opacity="1"/>
+        <text x="1200" y="522" fill="#1d4ed8" font-size="17" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Gradle wrapper</text>
+      
+        <rect x="952" y="574" width="204" height="54" rx="10" fill="#fff7ed" stroke="none" opacity="1"/>
+        <text x="970" y="608" fill="#c2410c" font-size="17" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Kotlin source</text>
+      
+        <rect x="1182" y="574" width="204" height="54" rx="10" fill="#ecfdf5" stroke="none" opacity="1"/>
+        <text x="1200" y="608" fill="#047857" font-size="17" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">23 test files</text>
+      
+        <rect x="952" y="660" width="204" height="54" rx="10" fill="#eff6ff" stroke="none" opacity="1"/>
+        <text x="970" y="694" fill="#1d4ed8" font-size="17" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">ADB online</text>
+      
+        <rect x="1182" y="660" width="204" height="54" rx="10" fill="#fff7ed" stroke="none" opacity="1"/>
+        <text x="1200" y="694" fill="#c2410c" font-size="17" font-weight="800" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">No secrets detected</text>
+      
+      <polyline points="968.0,840.0 999.4,830.0 1030.9,832.5 1062.3,810.0 1093.7,815.0 1125.1,792.5 1156.6,800.0 1188.0,770.0" fill="none" stroke="#0f766e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="1210" y="816" fill="#64748b" font-size="16" font-weight="700" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">build stability</text>
+    
+</svg>

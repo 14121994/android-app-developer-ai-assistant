@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#0f172a" flood-opacity="0.13"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+    <linearGradient id="tealBlue" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="night" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#07111f"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="ember" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ea580c"/>
+      <stop offset="1" stop-color="#be123c"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1600" height="1000" rx="0" fill="#fffdf8" stroke="none" opacity="1"/>
+  
+      <rect x="70" y="58" width="1460" height="884" rx="24" fill="#fffdf8" stroke="#eadfcd" opacity="1"/>
+      <text x="116" y="128" fill="#1c1917" font-size="34" font-weight="900" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Release Cockpit</text>
+      <text x="116" y="160" fill="#78716c" font-size="17" font-weight="600" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">From feature branch to confident Android release</text>
+      <rect x="116" y="210" width="418" height="666" rx="18" fill="#ffffff" stroke="#eadfcd" opacity="1"/>
+      <text x="150" y="260" fill="#1c1917" font-size="24" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Readiness</text>
+      <circle cx="325" cy="440" r="136" fill="#fef3c7" stroke="#f59e0b" opacity="1"/>
+      <text x="325" y="456" fill="#92400e" font-size="54" font-weight="900" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">84%</text>
+      <text x="325" y="492" fill="#78716c" font-size="17" font-weight="800" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">release confidence</text>
+      
+        <circle cx="168" cy="630" r="10" fill="#0f766e" stroke="none" opacity="1"/>
+        <text x="194" y="637" fill="#1c1917" font-size="18" font-weight="760" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Tests passed</text>
+      
+        <circle cx="168" cy="686" r="10" fill="#0f766e" stroke="none" opacity="1"/>
+        <text x="194" y="693" fill="#1c1917" font-size="18" font-weight="760" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Manifest checked</text>
+      
+        <circle cx="168" cy="742" r="10" fill="#f59e0b" stroke="none" opacity="1"/>
+        <text x="194" y="749" fill="#1c1917" font-size="18" font-weight="760" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Signing pending</text>
+      
+        <circle cx="168" cy="798" r="10" fill="#2563eb" stroke="none" opacity="1"/>
+        <text x="194" y="805" fill="#1c1917" font-size="18" font-weight="760" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">R8 rules reviewed</text>
+      
+      <rect x="574" y="210" width="434" height="666" rx="18" fill="#ffffff" stroke="#eadfcd" opacity="1"/>
+      <text x="608" y="260" fill="#1c1917" font-size="24" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Checklist</text>
+      
+        <rect x="608" y="304" width="366" height="50" rx="12" fill="#ecfdf5" stroke="#e7dcc8" opacity="1"/>
+        <text x="636" y="337" fill="#1c1917" font-size="18" font-weight="780" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">assembleRelease</text>
+      
+        <rect x="608" y="382" width="366" height="50" rx="12" fill="#ecfdf5" stroke="#e7dcc8" opacity="1"/>
+        <text x="636" y="415" fill="#1c1917" font-size="18" font-weight="780" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">lintVitalRelease</text>
+      
+        <rect x="608" y="460" width="366" height="50" rx="12" fill="#f8fafc" stroke="#e7dcc8" opacity="1"/>
+        <text x="636" y="493" fill="#1c1917" font-size="18" font-weight="780" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">dependency review</text>
+      
+        <rect x="608" y="538" width="366" height="50" rx="12" fill="#fff7ed" stroke="#e7dcc8" opacity="1"/>
+        <text x="636" y="571" fill="#1c1917" font-size="18" font-weight="780" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">privacy labels</text>
+      
+        <rect x="608" y="616" width="366" height="50" rx="12" fill="#f8fafc" stroke="#e7dcc8" opacity="1"/>
+        <text x="636" y="649" fill="#1c1917" font-size="18" font-weight="780" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">release notes</text>
+      
+        <rect x="608" y="694" width="366" height="50" rx="12" fill="#f8fafc" stroke="#e7dcc8" opacity="1"/>
+        <text x="636" y="727" fill="#1c1917" font-size="18" font-weight="780" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">rollback plan</text>
+      
+      <rect x="1048" y="210" width="390" height="666" rx="18" fill="#1c1917" stroke="#292524" opacity="1"/>
+      <text x="1084" y="260" fill="#fff7ed" font-size="24" font-weight="850" text-anchor="start" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Release Notes</text>
+      <text x="1084" y="314" fill="#7dd3fc" font-size="18" font-weight="800" font-family="'SF Mono', Menlo, Consolas, monospace">v1.4.0</text><text x="1084" y="345" fill="#fed7aa" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">- New login recovery flow</text><text x="1084" y="376" fill="#fed7aa" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">- Offline cache stability</text><text x="1084" y="407" fill="#fed7aa" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">- Crash fix on rotation</text><text x="1084" y="438" fill="#fed7aa" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">- Updated dependency catalog</text><text x="1084" y="469" fill="#fed7aa" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace"></text><text x="1084" y="500" fill="#fed7aa" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">Risk: signing key not loaded</text><text x="1084" y="531" fill="#fed7aa" font-size="18" font-weight="500" font-family="'SF Mono', Menlo, Consolas, monospace">Next: run release checklist</text>
+      <rect x="1084" y="790" width="318" height="52" rx="12" fill="#ea580c" stroke="none" opacity="1"/>
+      <text x="1243" y="824" fill="#ffffff" font-size="18" font-weight="850" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, Arial, sans-serif">Run Final Checks</text>
+    
+</svg>
