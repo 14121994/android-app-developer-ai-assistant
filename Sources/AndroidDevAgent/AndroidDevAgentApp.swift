@@ -1,6 +1,7 @@
 import AndroidDevAgentUI
 import AppKit
 import Darwin
+import Sparkle
 import SwiftUI
 
 @MainActor
@@ -10,10 +11,11 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
     private var didCompleteInitialPlacement = false
     private let launchWindowSize = NSSize(width: 1280, height: 820)
-    private let minimumWindowSize = NSSize(width: 1120, height: 700)
+    private let minimumWindowSize = NSSize(width: 980, height: 640)
 
     func show() {
         let window = existingOrNewWindow()
+        NSApplication.shared.unhide(nil)
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
@@ -22,6 +24,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             placeWindowAtDesktopCenter(window)
         }
         window.orderFrontRegardless()
+        window.makeMain()
         window.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
         if needsLaunchPlacement {
@@ -45,7 +48,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         let hostingController = NSHostingController(rootView: AgentWorkbenchView())
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: launchWindowSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -53,6 +56,18 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         window.identifier = NSUserInterfaceItemIdentifier("AndroidDevAgentMainWindow")
         window.contentViewController = hostingController
         window.minSize = minimumWindowSize
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.toolbarStyle = .unifiedCompact
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.sharingType = .readOnly
+        window.isMovableByWindowBackground = true
+        window.collectionBehavior = [.managed, .fullScreenPrimary]
+        window.animationBehavior = .documentWindow
+        window.hidesOnDeactivate = false
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
         window.isRestorable = false
@@ -134,6 +149,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainWindowController.shared.show()
     }
 
+    func applicationWillBecomeActive(_ notification: Notification) {
+        MainWindowController.shared.show()
+    }
+
+    func applicationDidUnhide(_ notification: Notification) {
+        MainWindowController.shared.show()
+    }
+
     private func showMainWindowSoon() {
         MainWindowController.shared.show()
         for delay in [0.15, 0.6] {
@@ -159,6 +182,7 @@ enum AndroidDevAgentApp {
             AndroidDevAgentAppCoverageHarness.exercise()
             exit(0)
         }
+        AndroidDevAgentLaunchReadiness.installCrashReporting()
         let app = NSApplication.shared
         let delegate = AppDelegate()
         retainedDelegate = delegate
@@ -176,6 +200,31 @@ enum AndroidDevAgentApp {
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
+        let settingsItem = NSMenuItem(
+            title: "Settings...",
+            action: #selector(MenuActionTarget.openAgentSettings(_:)),
+            keyEquivalent: ","
+        )
+        settingsItem.keyEquivalentModifierMask = [.command]
+        settingsItem.target = MenuActionTarget.shared
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
+        appMenu.addItem(AppUpdateController.shared.makeCheckForUpdatesMenuItem())
+        let supportItem = NSMenuItem(
+            title: "Open Support Folder",
+            action: #selector(MenuActionTarget.openSupportFolder(_:)),
+            keyEquivalent: ""
+        )
+        supportItem.target = MenuActionTarget.shared
+        appMenu.addItem(supportItem)
+        let logsItem = NSMenuItem(
+            title: "Open Launch Logs",
+            action: #selector(MenuActionTarget.openLaunchLogs(_:)),
+            keyEquivalent: ""
+        )
+        logsItem.target = MenuActionTarget.shared
+        appMenu.addItem(logsItem)
+        appMenu.addItem(.separator())
         appMenu.addItem(
             withTitle: "Quit Android Dev Agent",
             action: #selector(NSApplication.terminate(_:)),
@@ -183,6 +232,18 @@ enum AndroidDevAgentApp {
         )
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
 
         let windowMenuItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
@@ -196,6 +257,7 @@ enum AndroidDevAgentApp {
         windowMenu.addItem(showItem)
         windowMenuItem.submenu = windowMenu
         mainMenu.addItem(windowMenuItem)
+        NSApplication.shared.windowsMenu = windowMenu
 
         return mainMenu
     }
@@ -208,6 +270,59 @@ private final class MenuActionTarget: NSObject {
     @objc func showMainWindow(_ sender: Any?) {
         MainWindowController.shared.show()
     }
+
+    @objc func openAgentSettings(_ sender: Any?) {
+        MainWindowController.shared.show()
+        NotificationCenter.default.post(name: AndroidDevAgentNotifications.openAgentSettings, object: nil)
+    }
+
+    @objc func openSupportFolder(_ sender: Any?) {
+        AndroidDevAgentLaunchReadiness.openSupportDirectory()
+    }
+
+    @objc func openLaunchLogs(_ sender: Any?) {
+        AndroidDevAgentLaunchReadiness.openLogsDirectory()
+    }
+}
+
+@MainActor
+private final class AppUpdateController: NSObject {
+    static let shared = AppUpdateController()
+
+    private let updaterController: SPUStandardUpdaterController?
+
+    private override init() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let feedURL = (info["SUFeedURL"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let publicKey = (info["SUPublicEDKey"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if feedURL.isEmpty || publicKey.isEmpty {
+            updaterController = nil
+        } else {
+            updaterController = SPUStandardUpdaterController(
+                startingUpdater: true,
+                updaterDelegate: nil,
+                userDriverDelegate: nil
+            )
+        }
+
+        super.init()
+    }
+
+    func makeCheckForUpdatesMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Check for Updates...", action: nil, keyEquivalent: "")
+        if let updaterController {
+            item.target = updaterController
+            item.action = #selector(SPUStandardUpdaterController.checkForUpdates(_:))
+        } else {
+            item.target = self
+            item.action = #selector(checkForUpdatesUnavailable(_:))
+            item.isEnabled = false
+        }
+        return item
+    }
+
+    @objc private func checkForUpdatesUnavailable(_ sender: Any?) {}
 }
 
 @MainActor

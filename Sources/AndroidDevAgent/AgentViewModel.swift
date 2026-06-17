@@ -1,241 +1,8 @@
 import AndroidDevAgentCore
 import AppKit
 import Combine
+import CoreImage
 import Foundation
-
-enum SessionPaneTab: String, CaseIterable, Identifiable {
-    case chat = "Chat"
-    case diagnostics = "Diagnostics"
-    case checks = "Checks"
-
-    var id: String { rawValue }
-}
-
-enum ConsoleStreamFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case stdout = "Stdout"
-    case stderr = "Stderr"
-
-    var id: String { rawValue }
-}
-
-enum AndroidCommandKind: String, CaseIterable, Identifiable {
-    case unitTests = "Unit Tests"
-    case assembleDebug = "Assemble"
-    case connectedTests = "Device Tests"
-    case devices = "Devices"
-    case logcat = "Logcat"
-    case clearLogcat = "Clear Logs"
-    case launch = "Launch"
-
-    var id: String { rawValue }
-
-    var symbol: String {
-        switch self {
-        case .unitTests: return "checkmark.seal"
-        case .assembleDebug: return "hammer"
-        case .connectedTests: return "iphone.gen3"
-        case .devices: return "list.bullet.rectangle"
-        case .logcat: return "doc.text.magnifyingglass"
-        case .clearLogcat: return "trash"
-        case .launch: return "play"
-        }
-    }
-
-    var requiresDevice: Bool {
-        switch self {
-        case .connectedTests, .logcat, .clearLogcat, .launch:
-            return true
-        case .unitTests, .assembleDebug, .devices:
-            return false
-        }
-    }
-
-    var requiresConfirmation: Bool {
-        switch self {
-        case .connectedTests, .clearLogcat, .launch:
-            return true
-        case .unitTests, .assembleDebug, .devices, .logcat:
-            return false
-        }
-    }
-
-    var timeoutSeconds: TimeInterval {
-        switch self {
-        case .unitTests: return 90
-        case .assembleDebug: return 120
-        case .connectedTests: return 180
-        case .devices: return 20
-        case .logcat: return 20
-        case .clearLogcat: return 20
-        case .launch: return 25
-        }
-    }
-
-    var riskSummary: String {
-        switch self {
-        case .connectedTests:
-            return "Instrumentation tests can install, launch, and control the selected device."
-        case .clearLogcat:
-            return "This clears Logcat on the selected device."
-        case .launch:
-            return "This launches the configured package/activity on the selected device."
-        default:
-            return "This command will run in the selected project."
-        }
-    }
-}
-
-enum ScanState: Hashable {
-    case waiting
-    case scanning
-    case ready
-    case warning(String)
-    case failed(String)
-
-    var title: String {
-        switch self {
-        case .waiting: return "Choose project"
-        case .scanning: return "Scanning"
-        case .ready: return "Project ready"
-        case .warning: return "Needs review"
-        case .failed: return "Scan failed"
-        }
-    }
-
-    var detail: String {
-        switch self {
-        case .waiting:
-            return "Select an Android project folder to scan."
-        case .scanning:
-            return "Scanning Gradle, manifest, source, resources, and tests."
-        case .ready:
-            return "Android project context is loaded."
-        case let .warning(message), let .failed(message):
-            return message
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .waiting: return "folder.badge.questionmark"
-        case .scanning: return "arrow.triangle.2.circlepath"
-        case .ready: return "checkmark.circle.fill"
-        case .warning: return "exclamationmark.triangle.fill"
-        case .failed: return "xmark.octagon.fill"
-        }
-    }
-}
-
-struct ProjectFileItem: Identifiable, Hashable {
-    let path: String
-    let name: String
-    let depth: Int
-    let symbol: String
-    let isSelected: Bool
-    let isDirectory: Bool
-
-    var id: String { path }
-
-    init(
-        path: String,
-        name: String,
-        depth: Int,
-        symbol: String,
-        isSelected: Bool,
-        isDirectory: Bool = false
-    ) {
-        self.path = path
-        self.name = name
-        self.depth = depth
-        self.symbol = symbol
-        self.isSelected = isSelected
-        self.isDirectory = isDirectory
-    }
-}
-
-struct AgentChatMessage: Identifiable, Hashable {
-    let speaker: String
-    let message: String
-    let isUser: Bool
-
-    var id: String { "\(speaker)-\(message)" }
-}
-
-struct VerificationRow: Identifiable, Hashable {
-    let title: String
-    let detail: String
-    let symbol: String
-    let state: String
-    let severity: String
-
-    var id: String { title }
-}
-
-struct DeviceOption: Identifiable, Hashable {
-    let id: String
-    let name: String
-    let state: String
-
-    var displayName: String {
-        name.isEmpty ? "\(id) (\(state))" : "\(id) - \(name)"
-    }
-}
-
-struct CommandConfirmation: Identifiable, Hashable {
-    let kind: AndroidCommandKind
-    let message: String
-
-    var id: String { kind.id }
-}
-
-struct WirelessDebuggingConfirmation: Identifiable, Hashable {
-    let id = UUID()
-    let pairingAddress: String
-    let pairingCode: String
-    let connectAddress: String?
-}
-
-struct CommandRunSummary: Hashable {
-    let title: String
-    let status: String
-    let detail: String
-    let severity: String
-    let duration: String
-}
-
-struct DiagnosticRow: Identifiable, Hashable {
-    let title: String
-    let detail: String
-    let symbol: String
-    let severity: String
-
-    var id: String { title }
-}
-
-struct RecentProjectRow: Identifiable, Hashable {
-    let path: String
-    let name: String
-    let displayPath: String
-    let exists: Bool
-
-    var id: String { path }
-
-    var menuTitle: String {
-        exists ? "\(name) - \(displayPath)" : "\(name) - missing"
-    }
-}
-
-struct EditorDocument: Identifiable, Hashable {
-    let path: String
-    let name: String
-    var content: String
-    var savedContent: String
-    var lastError: String?
-
-    var id: String { path }
-    var isDirty: Bool { content != savedContent }
-}
 
 @MainActor
 final class AgentViewModel: ObservableObject {
@@ -247,6 +14,7 @@ final class AgentViewModel: ObservableObject {
     @Published private(set) var commandOutput: String = ""
     @Published private(set) var isRunningCommand = false
     @Published private(set) var lastCommandTitle = "Idle"
+    @Published private(set) var runningCommandKind: AndroidCommandKind?
     @Published private(set) var projectFiles: [ProjectFileItem] = []
     @Published private(set) var isProjectLoaded = false
     @Published private(set) var filePanelRevealGeneration = 0
@@ -257,18 +25,49 @@ final class AgentViewModel: ObservableObject {
     @Published var selectedVariant = "Debug"
     @Published var packageOverride = ""
     @Published var launchActivity = ".MainActivity"
-    @Published var selectedDeviceID = ""
+    @Published var selectedDeviceID = "" {
+        didSet {
+            guard selectedDeviceID != oldValue else { return }
+            resetDevicePreviewForSelectionChange()
+        }
+    }
     @Published var fileSearchQuery = ""
     @Published private(set) var modules: [String] = ["app"]
     @Published private(set) var buildVariants: [String] = ["Debug", "Release"]
     @Published private(set) var devices: [DeviceOption] = []
     @Published private(set) var isRefreshingDevices = false
+    @Published private(set) var devicePreviewImage: NSImage?
+    @Published private(set) var isRefreshingDevicePreview = false
+    @Published private(set) var isSendingDeviceInput = false
+    @Published private(set) var isDevicePreviewAutoRefreshEnabled = true {
+        didSet {
+            guard isDevicePreviewAutoRefreshEnabled != oldValue else { return }
+            if isDevicePreviewAutoRefreshEnabled {
+                startDevicePreviewAutoRefresh()
+            } else {
+                stopDevicePreviewAutoRefresh(updateStatus: true)
+            }
+        }
+    }
+    @Published private(set) var devicePreviewStatus = "Select an Android target to preview its screen."
+    @Published private(set) var devicePreviewUpdatedAt: Date?
     @Published private(set) var isRunningWirelessDebugging = false
     @Published var wirelessPairingCode = ""
     @Published var wirelessConnectAddress = ""
     @Published private(set) var wirelessDebuggingStatus = "Use Android Wireless Debugging to pair or connect a device over Wi-Fi."
     @Published private(set) var lastWirelessPairingAddress = ""
     @Published private(set) var lastWirelessDeviceAddress = ""
+    @Published private(set) var wirelessDebuggingDevices: [WirelessDebuggingDevice] = []
+    @Published private(set) var wirelessDeviceDiscoveryStatus = "Scan for wireless Android devices on this network."
+    @Published var selectedWirelessDebuggingDeviceID = "" {
+        didSet {
+            guard selectedWirelessDebuggingDeviceID != oldValue else { return }
+            applySelectedWirelessDebuggingDevice()
+        }
+    }
+    @Published private(set) var wirelessQRCodeImage: NSImage?
+    @Published private(set) var wirelessQRCodeStatus = "Generate a QR code, then scan it from Android Wireless Debugging."
+    @Published private(set) var wirelessQRCodePayload = ""
     @Published var pendingConfirmation: CommandConfirmation?
     @Published var pendingWirelessDebuggingConfirmation: WirelessDebuggingConfirmation?
     @Published private(set) var promptHistory: [String] = []
@@ -276,11 +75,19 @@ final class AgentViewModel: ObservableObject {
     @Published private(set) var isOutputTruncated = false
     @Published private(set) var lastCommandSummary: CommandRunSummary?
     @Published private(set) var debugReportPath = ""
+    @Published private(set) var supportBundlePath = ""
+    @Published private(set) var supportUploadStatus = ""
+    @Published private(set) var isSupportUploadRunning = false
     @Published var selectedPlanStepID: Int?
     @Published var selectedSessionTab: SessionPaneTab = .chat
     @Published private(set) var lastExportPath = ""
+    @Published private(set) var lastExportSource = ""
     @Published private(set) var openEditorDocuments: [EditorDocument] = []
     @Published var selectedEditorPath = ""
+    @Published private(set) var lastEditorSaveDiffLines: [String] = []
+    @Published private(set) var lastEditorSaveSafetySummary = "No editor save has run yet."
+    @Published private(set) var lastEditorUndoCheckpointPath = ""
+    @Published private(set) var lastEditorSecretScanSummary = "No editor save has scanned for secrets yet."
     @Published private(set) var expandedProjectFolderPaths = Set<String>()
     @Published var consoleSearchQuery = ""
     @Published var consoleStreamFilter: ConsoleStreamFilter = .all
@@ -296,26 +103,72 @@ final class AgentViewModel: ObservableObject {
     @Published private(set) var assistantModelStatus = "Local assistant ready."
     @Published private(set) var assistantModelDetail = "Model orchestration has not run yet."
     @Published private(set) var isAssistantThinking = false
+    @Published var assistantTaskDroidBaseURLText = "" {
+        didSet {
+            UserDefaults.standard.set(assistantTaskDroidBaseURLText, forKey: assistantTaskDroidBaseURLKey)
+        }
+    }
+    @Published var assistantTaskDroidTimeoutText = "360" {
+        didSet {
+            UserDefaults.standard.set(assistantTaskDroidTimeoutText, forKey: assistantTaskDroidTimeoutKey)
+        }
+    }
+    @Published var assistantPrefersTaskDroid = false {
+        didSet {
+            UserDefaults.standard.set(assistantPrefersTaskDroid, forKey: assistantPrefersTaskDroidKey)
+        }
+    }
+    @Published private(set) var assistantCredentialStatus = "OpenAI key not configured."
+    @Published var assistantAllowsProviderSharing = false {
+        didSet {
+            UserDefaults.standard.set(assistantAllowsProviderSharing, forKey: assistantProviderSharingConsentKey)
+            if hasLoadedStoredPreferences && oldValue != assistantAllowsProviderSharing {
+                AndroidDevAgentLaunchReadiness.recordPrivacyAudit(
+                    assistantAllowsProviderSharing ? "provider_sharing_enabled" : "provider_sharing_disabled"
+                )
+            }
+            assistantModelStatus = assistantAllowsProviderSharing
+                ? "Provider sharing enabled by user consent."
+                : "Provider sharing off; Ask uses the private local route."
+        }
+    }
     @Published var assistantModelMode: AssistantModelMode = .automatic {
         didSet {
             UserDefaults.standard.set(assistantModelMode.rawValue, forKey: assistantModelModeKey)
-            assistantModelStatus = "Model mode set to \(assistantModelMode.title)."
+            assistantModelStatus = assistantAllowsProviderSharing
+                ? "Model mode set to \(assistantModelMode.title)."
+                : "Model mode set to \(assistantModelMode.title); provider sharing remains off."
         }
     }
 
     let agent = DevelopmentAgent()
     private let assistantOrchestrator = AssistantModelOrchestrator()
     private let runner = ProcessRunner()
+    private let commandRunner = ProcessRunner()
+    private let deviceTestCleanupRunner = ProcessRunner()
+    private let deviceInputRunner = ProcessRunner()
     private var scanID = UUID()
     private var currentCommandID = UUID()
+    private var currentDeviceInputID = UUID()
     private var lastRunnableCommandKind: AndroidCommandKind?
     private var previousPromptDraft: String?
     private var revealFilesAfterCurrentScan = true
+    private var hasLoadedStoredPreferences = false
     private var assistantResponseFeedbackToken = UUID()
+    private var currentDevicePreviewID = UUID()
+    private var isDevicePreviewCaptureInFlight = false
+    private var devicePreviewAutoRefreshTask: Task<Void, Never>?
+    private var pendingDeviceTapCoordinates: (x: Int, y: Int)?
+    private var shouldResumeDevicePreviewAutoRefreshAfterInput = false
+    private let devicePreviewAutoRefreshIntervalNanoseconds: UInt64 = 20_000_000
     private let recentProjectsKey = "AndroidDevAgentRecentProjects"
     private let promptHistoryKey = "AndroidDevAgentPromptHistory"
     private let assistantModelModeKey = "AndroidDevAgentAssistantModelMode"
     private let assistantResponseExportPathKey = "AndroidDevAgentAssistantResponseExportPath"
+    private let assistantProviderSharingConsentKey = "AndroidDevAgentAssistantProviderSharingConsent"
+    private let assistantTaskDroidBaseURLKey = "AndroidDevAgentAssistantTaskDroidBaseURL"
+    private let assistantTaskDroidTimeoutKey = "AndroidDevAgentAssistantTaskDroidTimeout"
+    private let assistantPrefersTaskDroidKey = "AndroidDevAgentAssistantPrefersTaskDroid"
 
     init() {
         let initialPrompt = "Create a login screen, add ViewModel validation, run tests, and inspect the UI on an emulator."
@@ -332,11 +185,25 @@ final class AgentViewModel: ObservableObject {
         projectFiles = []
         recentProjectPaths = UserDefaults.standard.stringArray(forKey: recentProjectsKey) ?? []
         promptHistory = UserDefaults.standard.stringArray(forKey: promptHistoryKey) ?? []
+        supportBundlePath = UserDefaults.standard.string(forKey: AndroidDevAgentLaunchReadiness.latestSupportBundlePathKey) ?? ""
+        supportUploadStatus = UserDefaults.standard.string(forKey: AndroidDevAgentLaunchReadiness.latestSupportUploadStatusKey) ?? ""
+        assistantTaskDroidBaseURLText = UserDefaults.standard.string(forKey: assistantTaskDroidBaseURLKey) ?? ""
+        assistantTaskDroidTimeoutText = UserDefaults.standard.string(forKey: assistantTaskDroidTimeoutKey)
+            ?? Self.environmentTaskDroidTimeoutText
+            ?? "360"
+        if let storedPreference = UserDefaults.standard.object(forKey: assistantPrefersTaskDroidKey) as? Bool {
+            assistantPrefersTaskDroid = storedPreference
+        } else {
+            assistantPrefersTaskDroid = Self.environmentTaskDroidBaseURLText != nil
+        }
+        refreshAssistantCredentialStatus()
+        assistantAllowsProviderSharing = UserDefaults.standard.bool(forKey: assistantProviderSharingConsentKey)
         let restoredAssistantExportPath = restoreAssistantResponseExportPath()
         if let storedMode = UserDefaults.standard.string(forKey: assistantModelModeKey),
            let mode = AssistantModelMode(rawValue: storedMode) {
             assistantModelMode = mode
         }
+        hasLoadedStoredPreferences = true
         if let lastProject = recentProjectPaths.first {
             projectPath = lastProject
             if restoredAssistantExportPath {
@@ -399,7 +266,10 @@ final class AgentViewModel: ObservableObject {
     }
 
     func cancelScan() {
-        guard isScanningProject else { return }
+        guard isScanningProject else {
+            lastStatusMessage = "No project scan is currently running."
+            return
+        }
         scanID = UUID()
         isScanningProject = false
         scanState = .warning("Scan cancelled before completion.")
@@ -450,6 +320,10 @@ final class AgentViewModel: ObservableObject {
     }
 
     func generatePlan(updateStatus: Bool = true) {
+        guard !updateStatus || canGeneratePlan else {
+            lastStatusMessage = generatePlanHelpText
+            return
+        }
         savePromptToHistory(prompt)
         profile = ProjectProfile.from(snapshot: snapshot)
         plan = agent.createPlan(request: prompt, profile: profile, snapshot: snapshot)
@@ -459,6 +333,20 @@ final class AgentViewModel: ObservableObject {
             lastStatusMessage = "Plan refreshed for \(isProjectLoaded ? profile.packageName : "pending project")."
         }
         selectedSessionTab = .chat
+    }
+
+    var canGeneratePlan: Bool {
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isScanningProject
+    }
+
+    var generatePlanHelpText: String {
+        if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Enter a prompt before regenerating the plan."
+        }
+        if isScanningProject {
+            return "Wait for project scanning to finish before regenerating the plan."
+        }
+        return "Refreshes the assistant plan from the current prompt and workspace context."
     }
 
     func submitAssistantPrompt(runActions: Bool = true) {
@@ -485,14 +373,86 @@ final class AgentViewModel: ObservableObject {
     }
 
     func askAssistant(runActions: Bool = true) {
-        guard !isAssistantThinking else { return }
+        guard !isAssistantThinking else {
+            lastStatusMessage = "The assistant is already generating a response."
+            return
+        }
         Task { @MainActor [weak self] in
             await self?.submitAssistantPromptWithModels(runActions: runActions)
         }
     }
 
+    var canAskAssistant: Bool {
+        askAssistantBlockReason == nil
+    }
+
+    var canEditAssistantPrompt: Bool {
+        !isAssistantThinking
+    }
+
+    var canEditAssistantModelMode: Bool {
+        !isAssistantThinking
+    }
+
+    var canEditAssistantPrivacyConsent: Bool {
+        !isAssistantThinking
+    }
+
+    var assistantModelModeHelpText: String {
+        isAssistantThinking
+            ? "Wait for the current assistant response before changing model mode."
+            : "Selects the Ask routing mode."
+    }
+
+    var assistantPromptHelpText: String {
+        isAssistantThinking
+            ? "Wait for the assistant response before editing the prompt."
+            : "Describe the Android development task for the plan."
+    }
+
+    var askAssistantHelpText: String {
+        askAssistantBlockReason ?? "Ask the assistant for a project-specific response and run safe automatic actions requested by the prompt."
+    }
+
+    var assistantProviderSharingHelpText: String {
+        if isAssistantThinking {
+            return "Wait for the current assistant response before changing provider sharing."
+        }
+        if assistantAllowsProviderSharing && assistantModelMode == .privateLocal {
+            return "Provider sharing consent is saved, but Private mode still blocks project file excerpts and command output."
+        }
+        return assistantAllowsProviderSharing
+            ? "Provider sharing is enabled. Ask may send redacted project context and recent command output to the selected model provider."
+            : "Provider sharing is off. Ask uses the private local route and omits project file excerpts plus command output."
+    }
+
+    var assistantPrivacySummary: String {
+        if assistantAllowsProviderSharing && assistantModelMode == .privateLocal {
+            return "Private mode local"
+        }
+        if assistantAllowsProviderSharing {
+            return "Provider sharing enabled"
+        }
+        return "Private by default"
+    }
+
+    private var askAssistantBlockReason: String? {
+        if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Enter a prompt before asking the assistant."
+        }
+        if isScanningProject { return "Wait for project scanning to finish before asking the assistant." }
+        if isRunningCommand { return "Wait for the current command to finish before asking the assistant." }
+        if isRefreshingDevices { return "Wait for device refresh to finish before asking the assistant." }
+        if isRunningWirelessDebugging { return "Wait for Wireless Debugging to finish before asking the assistant." }
+        if isAssistantThinking { return "The assistant is already generating a response." }
+        return nil
+    }
+
     func submitAssistantPromptWithModels(runActions: Bool = true, allowRemoteModels: Bool = true) async {
-        guard !isAssistantThinking else { return }
+        guard !isAssistantThinking else {
+            lastStatusMessage = "The assistant is already generating a response."
+            return
+        }
         savePromptToHistory(prompt)
         profile = ProjectProfile.from(snapshot: snapshot)
         plan = agent.createPlan(request: prompt, profile: profile, snapshot: snapshot)
@@ -505,30 +465,23 @@ final class AgentViewModel: ObservableObject {
             actionMessages = performAssistantActions(for: lower)
         }
 
-        let contextFiles = assistantContextFiles(for: lower)
-        let request = AssistantModelRequest(
-            prompt: plan.originalRequest,
-            profile: profile,
-            snapshot: snapshot,
-            planIntent: plan.intent,
-            modules: modules,
-            variants: buildVariants,
-            contextFiles: contextFiles,
-            commandSummary: lastCommandSummary?.detail,
-            recentCommandOutput: recentCommandOutputExcerpt
-        )
+        let sharingAllowed = assistantProviderPayloadSharingAllowed(allowRemoteModels: allowRemoteModels)
+        let request = makeAssistantModelRequest(for: lower, sharingAllowed: sharingAllowed)
+        let contextFiles = request.contextFiles
         let config = AssistantOrchestrationConfig(
-            mode: assistantModelMode,
+            mode: sharingAllowed ? assistantModelMode : .privateLocal,
             openAIAPIKey: openAIAPIKey,
-            allowRemoteModels: allowRemoteModels,
-            preferTaskDroid: allowRemoteModels
+            allowRemoteModels: sharingAllowed,
+            taskDroidBaseURL: assistantTaskDroidBaseURL,
+            preferTaskDroid: sharingAllowed && assistantTaskDroidEnabled,
+            taskDroidTimeoutSeconds: assistantTaskDroidTimeoutSeconds
         )
 
         isAssistantThinking = true
-        assistantModelStatus = "Routing with \(assistantModelMode.title)..."
-        assistantModelDetail = contextFiles.isEmpty
-            ? "No file excerpts were available for model context."
-            : "Prepared \(contextFiles.count) project context file\(contextFiles.count == 1 ? "" : "s")."
+        assistantModelStatus = sharingAllowed
+            ? "Routing with \(assistantModelMode.title) after provider-sharing consent..."
+            : "Routing privately; provider sharing is off."
+        assistantModelDetail = assistantPayloadDetail(contextFileCount: contextFiles.count, sharingAllowed: sharingAllowed)
         selectedSessionTab = .chat
 
         let modelResponse = await assistantOrchestrator.answer(request: request, config: config)
@@ -538,10 +491,42 @@ final class AgentViewModel: ObservableObject {
         clearAssistantResponseExportPath()
         assistantResponseFeedback = ""
         assistantModelStatus = modelResponse.status
-        assistantModelDetail = "\(modelResponse.modelDisplayName) (\(modelResponse.modelID)) via \(modelResponse.provider.rawValue); retrieval: \(modelResponse.retrievalModelID); context: \(modelResponse.contextFilePaths.isEmpty ? "none" : modelResponse.contextFilePaths.joined(separator: ", "))"
+        assistantModelDetail = "\(modelResponse.modelDisplayName) (\(modelResponse.modelID)) via \(modelResponse.provider.rawValue); privacy: \(sharingAllowed ? "provider sharing enabled" : "private local, no provider sharing"); setup: \(assistantModelSetupSummary); retrieval: \(modelResponse.retrievalModelID); context: \(modelResponse.contextFilePaths.isEmpty ? "none" : modelResponse.contextFilePaths.joined(separator: ", "))"
         lastStatusMessage = assistantActionSummary.isEmpty
-            ? "Assistant response generated by \(modelResponse.modelDisplayName)."
+            ? "Assistant response generated by \(modelResponse.modelDisplayName)\(sharingAllowed ? "." : " without provider sharing.")."
             : "Assistant responded and acted: \(assistantActionSummary)"
+    }
+
+    private func assistantProviderPayloadSharingAllowed(allowRemoteModels: Bool) -> Bool {
+        allowRemoteModels && assistantAllowsProviderSharing && assistantModelMode != .privateLocal
+    }
+
+    private func makeAssistantModelRequest(for lower: String, sharingAllowed: Bool) -> AssistantModelRequest {
+        let contextFiles = sharingAllowed ? assistantContextFiles(for: lower) : []
+        return AssistantModelRequest(
+            prompt: plan.originalRequest,
+            profile: profile,
+            snapshot: snapshot,
+            planIntent: plan.intent,
+            modules: modules,
+            variants: buildVariants,
+            contextFiles: contextFiles,
+            commandSummary: sharingAllowed ? lastCommandSummary?.detail : nil,
+            recentCommandOutput: sharingAllowed ? recentCommandOutputExcerpt : nil
+        )
+    }
+
+    private func assistantPayloadDetail(contextFileCount: Int, sharingAllowed: Bool) -> String {
+        if sharingAllowed {
+            let context = contextFileCount == 0
+                ? "No file excerpts were available for model context."
+                : "Prepared \(contextFileCount) redacted project context file\(contextFileCount == 1 ? "" : "s")."
+            let command = recentCommandOutputExcerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "No recent command output will be sent."
+                : "Recent command output excerpt is allowed by consent."
+            return "\(context) \(command) \(assistantProviderAccountSummary)."
+        }
+        return "Provider sharing is off; Ask omitted project file excerpts and command output. \(assistantProviderAccountSummary)."
     }
 
     func runCommand(_ kind: AndroidCommandKind) {
@@ -617,14 +602,20 @@ final class AgentViewModel: ObservableObject {
     }
 
     func confirmPendingCommand() {
-        guard let pendingConfirmation else { return }
+        guard let pendingConfirmation else {
+            lastStatusMessage = "No command is waiting for confirmation."
+            return
+        }
         let kind = pendingConfirmation.kind
         self.pendingConfirmation = nil
         executeCommand(kind)
     }
 
     func cancelPendingCommand() {
-        guard let pendingConfirmation else { return }
+        guard let pendingConfirmation else {
+            lastStatusMessage = "No command confirmation is open."
+            return
+        }
         lastStatusMessage = "\(pendingConfirmation.kind.rawValue) cancelled."
         self.pendingConfirmation = nil
     }
@@ -638,6 +629,7 @@ final class AgentViewModel: ObservableObject {
         let commandID = UUID()
         currentCommandID = commandID
         lastCommandTitle = command.title
+        runningCommandKind = kind
         isRunningCommand = true
         let runLocation = kind == .devices && !isProjectLoaded ? "ADB environment" : displayPath(projectPath)
         lastCommandSummary = CommandRunSummary(
@@ -651,8 +643,9 @@ final class AgentViewModel: ObservableObject {
         appendOutput("$ \(command.preview)\n")
 
         Task {
-            let result = await runner.run(command, timeoutSeconds: kind.timeoutSeconds)
+            let result = await commandRunner.run(command, timeoutSeconds: kind.timeoutSeconds)
             guard self.currentCommandID == commandID else { return }
+            runningCommandKind = nil
             let elapsed = Date().timeIntervalSince(startedAt)
             let status = result.succeeded ? "succeeded" : result.exitCode == -2 ? "timed out" : "failed with exit code \(result.exitCode)"
             appendOutput("\n[\(result.command.title) \(status)]\n")
@@ -686,7 +679,7 @@ final class AgentViewModel: ObservableObject {
     }
 
     func clearOutput() {
-        commandOutput = "Console cleared.\n"
+        commandOutput = ""
         lastStandardOutput = ""
         lastStandardError = ""
         consoleStreamFilter = .all
@@ -696,26 +689,130 @@ final class AgentViewModel: ObservableObject {
     }
 
     func stopRunningCommand() {
-        guard isRunningCommand else { return }
+        guard isRunningCommand else {
+            lastStatusMessage = "No command is currently running."
+            return
+        }
+        let stoppedKind = runningCommandKind
+        let stoppedTitle = stoppedKind?.rawValue ?? (lastCommandTitle == "Idle" ? "Command" : lastCommandTitle)
+        let didTerminateProcess = commandRunner.terminateRunningProcess()
+        let didStartDeviceCleanup = stopDeviceTestsIfNeeded(for: stoppedKind)
         currentCommandID = UUID()
+        runningCommandKind = nil
         isRunningCommand = false
         lastCommandTitle = "Idle"
         lastCommandSummary = CommandRunSummary(
-            title: "Command stopped",
+            title: stoppedTitle,
             status: "Stopped",
-            detail: "The command result will be ignored if it finishes later.",
+            detail: stoppedCommandDetail(
+                hostProcessTerminated: didTerminateProcess,
+                deviceCleanupStarted: didStartDeviceCleanup,
+                kind: stoppedKind
+            ),
             severity: "warning",
             duration: "0s"
         )
-        lastStatusMessage = "Command stopped."
-        appendOutput("\n[command stopped by user]\n")
+        lastStatusMessage = "\(stoppedTitle) stopped."
+        appendOutput("\n[\(stoppedTitle) stopped by user]\n")
+    }
+
+    private func stoppedCommandDetail(
+        hostProcessTerminated: Bool,
+        deviceCleanupStarted: Bool,
+        kind: AndroidCommandKind?
+    ) -> String {
+        if kind == .connectedTests, deviceCleanupStarted {
+            return hostProcessTerminated
+                ? "The host process tree was asked to terminate, and device-side instrumentation cleanup is running."
+                : "Stop was requested before a host process handle was available; device-side instrumentation cleanup is running."
+        }
+        if kind == .connectedTests {
+            return hostProcessTerminated
+                ? "The host process tree was asked to terminate. Device-side cleanup was skipped because the selected device or package is unavailable."
+                : "Stop was requested before a host process handle was available. Device-side cleanup was skipped because the selected device or package is unavailable."
+        }
+        return hostProcessTerminated
+            ? "The running process tree was asked to terminate. Any late result will be ignored."
+            : "Stop was requested before a process handle was available. Any late result will be ignored."
+    }
+
+    @discardableResult
+    private func stopDeviceTestsIfNeeded(for kind: AndroidCommandKind?) -> Bool {
+        guard kind == .connectedTests else { return false }
+
+        let deviceSerial = selectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let basePackage = packageNameForCommands.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !deviceSerial.isEmpty else {
+            appendOutput("[Device test cleanup skipped: no selected device.]\n")
+            return false
+        }
+        guard isKnownAndroidPackageName(basePackage) else {
+            appendOutput("[Device test cleanup skipped: package name is unavailable.]\n")
+            return false
+        }
+
+        let rootPath = commandWorkingDirectory
+        let deviceName = selectedDeviceDisplayName
+        let initialPackages = defaultDeviceTestStopPackages(for: basePackage)
+        appendOutput("[Stopping device-side tests on \(deviceName).]\n")
+
+        Task {
+            var packagesToStop = initialPackages
+            let instrumentationCommand = AndroidToolCommandFactory.listInstrumentation(
+                rootPath: rootPath,
+                deviceSerial: deviceSerial
+            )
+            let instrumentationResult = await deviceTestCleanupRunner.run(instrumentationCommand, timeoutSeconds: 8)
+            if instrumentationResult.succeeded {
+                packagesToStop.append(
+                    contentsOf: instrumentationStopPackages(
+                        in: instrumentationResult.standardOutput,
+                        basePackageName: basePackage
+                    )
+                )
+            } else {
+                let reason = firstUsefulLine(in: instrumentationResult.standardError)
+                    ?? firstUsefulLine(in: instrumentationResult.standardOutput)
+                    ?? "Unable to inspect installed instrumentation packages."
+                appendOutput("[Instrumentation package lookup failed: \(reason)]\n")
+            }
+
+            let uniquePackages = orderedUniquePackages(packagesToStop)
+            for packageName in uniquePackages {
+                let command = AndroidToolCommandFactory.forceStopPackage(
+                    rootPath: rootPath,
+                    packageName: packageName,
+                    deviceSerial: deviceSerial
+                )
+                appendOutput("$ \(command.preview)\n")
+                let result = await deviceTestCleanupRunner.run(command, timeoutSeconds: 8)
+                let status = result.succeeded ? "succeeded" : result.exitCode == -2 ? "timed out" : "failed with exit code \(result.exitCode)"
+                appendOutput("[\(command.title) \(status)]\n")
+                if !result.standardOutput.isEmpty {
+                    appendOutput(result.standardOutput)
+                }
+                if !result.standardError.isEmpty {
+                    appendOutput("\n" + result.standardError)
+                }
+                appendOutput("\n")
+            }
+
+            lastStatusMessage = "Device Tests stopped on \(deviceName)."
+            lastCommandSummary = CommandRunSummary(
+                title: "Device Tests",
+                status: "Stopped",
+                detail: "Stopped the host command and force-stopped \(uniquePackages.joined(separator: ", ")) on \(deviceName).",
+                severity: "warning",
+                duration: "0s"
+            )
+        }
+
+        return true
     }
 
     func refreshDevices() {
         guard canRefreshDevices else {
-            lastStatusMessage = isRefreshingDevices
-                ? "Device refresh is already running."
-                : "Wait for the current scan, command, or Wireless Debugging action before refreshing devices."
+            lastStatusMessage = refreshDevicesHelpText
             return
         }
         isRefreshingDevices = true
@@ -754,6 +851,244 @@ final class AgentViewModel: ObservableObject {
         }
     }
 
+    func refreshDevicePreview() {
+        captureDevicePreview(manual: true)
+    }
+
+    func sendDeviceTap(x: Int, y: Int) {
+        guard hasConnectedDevice else {
+            devicePreviewStatus = deviceTapHelpText
+            lastStatusMessage = deviceTapHelpText
+            return
+        }
+
+        pendingDeviceTapCoordinates = (max(0, x), max(0, y))
+        pauseDevicePreviewAutoRefreshForInput()
+        if isDevicePreviewCaptureInFlight || isRefreshingDevicePreview {
+            devicePreviewStatus = "Waiting for the current frame before tapping \(selectedDeviceDisplayName)..."
+            lastStatusMessage = devicePreviewStatus
+            return
+        }
+        runPendingDeviceTapIfPossible()
+    }
+
+    private func runPendingDeviceTapIfPossible() {
+        guard let tap = pendingDeviceTapCoordinates,
+              !isSendingDeviceInput,
+              !isDevicePreviewCaptureInFlight,
+              !isRefreshingDevicePreview else {
+            return
+        }
+        guard canSendDeviceTap else {
+            pendingDeviceTapCoordinates = nil
+            resumeDevicePreviewAfterInput()
+            devicePreviewStatus = deviceTapHelpText
+            lastStatusMessage = deviceTapHelpText
+            return
+        }
+        pendingDeviceTapCoordinates = nil
+        runDeviceTap(x: tap.x, y: tap.y)
+    }
+
+    private func runDeviceTap(x: Int, y: Int) {
+        let serial = selectedDeviceID
+        let deviceName = selectedDeviceDisplayName
+        let command = AndroidToolCommandFactory.tapDeviceScreen(
+            rootPath: commandWorkingDirectory,
+            deviceSerial: serial,
+            x: x,
+            y: y
+        )
+        let inputID = UUID()
+        currentDeviceInputID = inputID
+        isSendingDeviceInput = true
+        devicePreviewStatus = "Sending tap to \(deviceName)..."
+        lastStatusMessage = devicePreviewStatus
+        appendOutput("$ \(command.preview)\n")
+
+        let startedAt = Date()
+        Task {
+            let result = await deviceInputRunner.run(command, timeoutSeconds: 5)
+            let elapsed = Date().timeIntervalSince(startedAt)
+            let status = result.succeeded ? "succeeded" : result.exitCode == -2 ? "timed out" : "failed with exit code \(result.exitCode)"
+            guard currentDeviceInputID == inputID, selectedDeviceID == serial else { return }
+            isSendingDeviceInput = false
+            appendOutput("\n[\(result.command.title) \(status)]\n")
+            if !result.standardOutput.isEmpty {
+                appendOutput(result.standardOutput)
+            }
+            if !result.standardError.isEmpty {
+                appendOutput("\n" + result.standardError)
+            }
+            appendOutput("\n")
+            lastStandardOutput = result.standardOutput
+            lastStandardError = result.standardError
+            defer {
+                if pendingDeviceTapCoordinates != nil {
+                    runPendingDeviceTapIfPossible()
+                } else {
+                    resumeDevicePreviewAfterInput()
+                }
+            }
+
+            if result.succeeded {
+                devicePreviewStatus = "Tapped \(deviceName) at \(x), \(y)."
+                lastStatusMessage = devicePreviewStatus
+                lastCommandSummary = CommandRunSummary(
+                    title: result.command.title,
+                    status: "Succeeded",
+                    detail: "Sent adb input tap \(x) \(y) to \(deviceName).",
+                    severity: "ready",
+                    duration: String(format: "%.1fs", elapsed)
+                )
+            } else {
+                let usefulLine = firstUsefulLine(in: result.standardError)
+                    ?? firstUsefulLine(in: result.standardOutput)
+                    ?? "ADB input tap did not complete."
+                devicePreviewStatus = "Device tap failed. \(usefulLine)"
+                lastStatusMessage = devicePreviewStatus
+                lastCommandSummary = CommandRunSummary(
+                    title: result.command.title,
+                    status: status.capitalized,
+                    detail: usefulLine,
+                    severity: "warning",
+                    duration: String(format: "%.1fs", elapsed)
+                )
+            }
+        }
+    }
+
+    private func pauseDevicePreviewAutoRefreshForInput() {
+        shouldResumeDevicePreviewAutoRefreshAfterInput = isDevicePreviewAutoRefreshEnabled
+        devicePreviewAutoRefreshTask?.cancel()
+        devicePreviewAutoRefreshTask = nil
+    }
+
+    private func resumeDevicePreviewAfterInput() {
+        let shouldResume = shouldResumeDevicePreviewAutoRefreshAfterInput
+        shouldResumeDevicePreviewAutoRefreshAfterInput = false
+        guard shouldResume, isDevicePreviewAutoRefreshEnabled, hasConnectedDevice else { return }
+        startDevicePreviewAutoRefresh()
+    }
+
+    private func captureDevicePreview(manual: Bool) {
+        guard canRefreshDevicePreview else {
+            if manual {
+                devicePreviewStatus = devicePreviewHelpText
+                lastStatusMessage = devicePreviewHelpText
+            }
+            return
+        }
+
+        let serial = selectedDeviceID
+        let deviceName = selectedDeviceDisplayName
+        let command = AndroidToolCommandFactory.deviceScreenCapture(
+            rootPath: commandWorkingDirectory,
+            deviceSerial: serial
+        )
+        let previewID = UUID()
+        currentDevicePreviewID = previewID
+        isDevicePreviewCaptureInFlight = true
+        if manual {
+            isRefreshingDevicePreview = true
+        }
+        if manual {
+            devicePreviewStatus = "Refreshing \(deviceName)..."
+        } else if devicePreviewImage == nil {
+            devicePreviewStatus = "Loading \(deviceName)..."
+        }
+        if manual {
+            lastStatusMessage = "Refreshing device preview for \(deviceName)..."
+        }
+
+        Task {
+            let result = await runner.runBinary(command, timeoutSeconds: 10)
+            let isCurrentPreview = self.currentDevicePreviewID == previewID
+            if isCurrentPreview {
+                self.isDevicePreviewCaptureInFlight = false
+                if manual {
+                    self.isRefreshingDevicePreview = false
+                }
+            }
+            guard isCurrentPreview else { return }
+            guard self.selectedDeviceID == serial else { return }
+            defer {
+                self.runPendingDeviceTapIfPossible()
+            }
+
+            if result.succeeded, let image = NSImage(data: result.standardOutput) {
+                self.devicePreviewImage = image
+                self.devicePreviewUpdatedAt = Date()
+                self.devicePreviewStatus = "Showing \(deviceName)."
+                if manual {
+                    self.lastStatusMessage = "Device preview updated for \(deviceName)."
+                }
+                return
+            }
+
+            let errorLine = firstUsefulLine(in: result.standardError)
+            let fallback = result.standardOutput.isEmpty
+                ? "ADB returned no frame data."
+                : "ADB returned \(result.standardOutput.count) bytes that were not a PNG frame."
+            let detail = errorLine ?? fallback
+            self.devicePreviewStatus = "Preview unavailable. \(detail)"
+            if manual {
+                self.lastStatusMessage = self.devicePreviewStatus
+            }
+        }
+    }
+
+    private func startDevicePreviewAutoRefresh() {
+        devicePreviewAutoRefreshTask?.cancel()
+        guard hasConnectedDevice else {
+            devicePreviewStatus = selectedDeviceID.isEmpty
+                ? "Select an Android target to preview its screen."
+                : "Waiting for selected target to reconnect."
+            return
+        }
+        devicePreviewStatus = "Auto previewing \(selectedDeviceDisplayName)."
+        captureDevicePreview(manual: false)
+        devicePreviewAutoRefreshTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: self?.devicePreviewAutoRefreshIntervalNanoseconds ?? 20_000_000)
+                guard let self, !Task.isCancelled, self.isDevicePreviewAutoRefreshEnabled else { break }
+                self.captureDevicePreview(manual: false)
+            }
+        }
+    }
+
+    private func stopDevicePreviewAutoRefresh(updateStatus: Bool) {
+        devicePreviewAutoRefreshTask?.cancel()
+        devicePreviewAutoRefreshTask = nil
+        currentDevicePreviewID = UUID()
+        currentDeviceInputID = UUID()
+        isDevicePreviewCaptureInFlight = false
+        isRefreshingDevicePreview = false
+        if updateStatus {
+            devicePreviewStatus = devicePreviewImage == nil
+                ? "Select an Android target to preview its screen."
+                : "Preview paused."
+        }
+    }
+
+    private func resetDevicePreviewForSelectionChange() {
+        stopDevicePreviewAutoRefresh(updateStatus: false)
+        currentDevicePreviewID = UUID()
+        isDevicePreviewCaptureInFlight = false
+        isRefreshingDevicePreview = false
+        isSendingDeviceInput = false
+        pendingDeviceTapCoordinates = nil
+        shouldResumeDevicePreviewAutoRefreshAfterInput = false
+        devicePreviewImage = nil
+        devicePreviewUpdatedAt = nil
+        devicePreviewStatus = selectedDeviceID.isEmpty
+            ? "Select an Android target to preview its screen."
+            : hasConnectedDevice ? "Ready to preview \(selectedDeviceDisplayName)." : "Waiting for selected target to reconnect."
+        if isDevicePreviewAutoRefreshEnabled, hasConnectedDevice {
+            startDevicePreviewAutoRefresh()
+        }
+    }
+
     func pairWirelessDevice() {
         let code = wirelessPairingCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canPairWirelessDevice else {
@@ -761,11 +1096,137 @@ final class AgentViewModel: ObservableObject {
             lastStatusMessage = wirelessDebuggingStatus
             return
         }
+        if let selectedWirelessDebuggingDevice, let pairingAddress = selectedWirelessDebuggingDevice.pairingAddress {
+            lastWirelessPairingAddress = pairingAddress
+            if let connectAddress = selectedWirelessDebuggingDevice.connectAddress {
+                wirelessConnectAddress = connectAddress
+            }
+            pendingWirelessDebuggingConfirmation = WirelessDebuggingConfirmation(
+                pairingAddress: pairingAddress,
+                pairingCode: code,
+                connectAddress: selectedWirelessDebuggingDevice.connectAddress
+            )
+            wirelessDebuggingStatus = "Selected wireless device ready for pairing confirmation."
+            lastStatusMessage = wirelessDebuggingStatus
+            return
+        }
         discoverWirelessPairingAddress(pairingCode: code)
     }
 
+    func prepareWirelessDeviceConnectionSheet() {
+        guard wirelessDebuggingDevices.isEmpty else { return }
+        refreshWirelessDebuggingDevices()
+    }
+
+    func refreshWirelessDebuggingDevices() {
+        guard canRefreshWirelessDebuggingDevices else {
+            wirelessDeviceDiscoveryStatus = wirelessDiscoveryHelpText
+            lastStatusMessage = wirelessDeviceDiscoveryStatus
+            return
+        }
+
+        let command = AndroidToolCommandFactory.mdnsServices(rootPath: commandWorkingDirectory)
+        isRunningWirelessDebugging = true
+        lastCommandTitle = command.title
+        selectedSessionTab = .diagnostics
+        wirelessDeviceDiscoveryStatus = "Scanning for wireless Android devices..."
+        wirelessDebuggingStatus = wirelessDeviceDiscoveryStatus
+        lastStatusMessage = wirelessDeviceDiscoveryStatus
+        lastCommandSummary = CommandRunSummary(
+            title: command.title,
+            status: "Running",
+            detail: "Scanning ADB mDNS services for wireless Android devices.",
+            severity: "running",
+            duration: "0s"
+        )
+        appendOutput("$ \(command.preview)\n")
+
+        let startedAt = Date()
+        Task {
+            let result = await runner.run(command, timeoutSeconds: 20)
+            let elapsed = Date().timeIntervalSince(startedAt)
+            let status = result.succeeded ? "succeeded" : result.exitCode == -2 ? "timed out" : "failed with exit code \(result.exitCode)"
+            appendOutput("\n[\(result.command.title) \(status)]\n")
+            if !result.standardOutput.isEmpty {
+                appendOutput(result.standardOutput)
+            }
+            if !result.standardError.isEmpty {
+                appendOutput("\n" + result.standardError)
+            }
+            appendOutput("\n")
+            lastStandardOutput = result.standardOutput
+            lastStandardError = result.standardError
+            isRunningWirelessDebugging = false
+            lastCommandTitle = "Idle"
+            lastCommandSummary = summarizeCommandResult(result, status: status, elapsed: elapsed)
+
+            guard result.succeeded else {
+                let usefulLine = firstUsefulLine(in: result.standardError) ?? firstUsefulLine(in: result.standardOutput) ?? "ADB mDNS discovery failed."
+                wirelessDebuggingDevices = []
+                selectedWirelessDebuggingDeviceID = ""
+                wirelessDeviceDiscoveryStatus = "Could not scan wireless devices. \(usefulLine)"
+                wirelessDebuggingStatus = wirelessDeviceDiscoveryStatus
+                lastStatusMessage = wirelessDeviceDiscoveryStatus
+                selectedSessionTab = .diagnostics
+                return
+            }
+
+            let discoveredDevices = parseWirelessDebuggingDeviceList(result.standardOutput)
+            wirelessDebuggingDevices = discoveredDevices
+            if !discoveredDevices.contains(where: { $0.id == selectedWirelessDebuggingDeviceID }) {
+                selectedWirelessDebuggingDeviceID = ""
+            } else {
+                applySelectedWirelessDebuggingDevice()
+            }
+            if discoveredDevices.isEmpty {
+                wirelessDeviceDiscoveryStatus = "No wireless Android devices found on this network."
+            } else {
+                wirelessDeviceDiscoveryStatus = "Found \(discoveredDevices.count) wireless Android device\(discoveredDevices.count == 1 ? "" : "s")."
+            }
+            wirelessDebuggingStatus = wirelessDeviceDiscoveryStatus
+            lastStatusMessage = wirelessDeviceDiscoveryStatus
+            selectedSessionTab = .diagnostics
+        }
+    }
+
+    func selectWirelessDebuggingDevice(_ device: WirelessDebuggingDevice) {
+        selectedWirelessDebuggingDeviceID = device.id
+    }
+
+    func generateWirelessQRCode() {
+        guard canGenerateWirelessQRCode else {
+            wirelessQRCodeStatus = wirelessQRCodeHelpText
+            lastStatusMessage = wirelessQRCodeStatus
+            return
+        }
+        let serviceName = "adb-\(randomADBToken(length: 12))"
+        let password = randomADBToken(length: 16)
+        let payload = "WIFI:T:ADB;S:\(escapedQRCodeValue(serviceName));P:\(escapedQRCodeValue(password));;"
+        guard let image = makeQRCodeImage(from: payload) else {
+            wirelessQRCodeImage = nil
+            wirelessQRCodePayload = ""
+            wirelessQRCodeStatus = "Could not generate QR code."
+            lastStatusMessage = wirelessQRCodeStatus
+            return
+        }
+        wirelessQRCodeImage = image
+        wirelessQRCodePayload = payload
+        wirelessQRCodeStatus = "QR code ready. Scan it from Android Wireless Debugging, then scan devices to connect the discovered target."
+        lastStatusMessage = wirelessQRCodeStatus
+    }
+
+    func clearWirelessQRCode() {
+        wirelessQRCodeImage = nil
+        wirelessQRCodePayload = ""
+        wirelessQRCodeStatus = "Generate a QR code, then scan it from Android Wireless Debugging."
+        lastStatusMessage = "Wireless QR code cleared."
+    }
+
     func confirmWirelessPairing() {
-        guard let confirmation = pendingWirelessDebuggingConfirmation else { return }
+        guard let confirmation = pendingWirelessDebuggingConfirmation else {
+            lastStatusMessage = "No Wireless Debugging pairing confirmation is open."
+            return
+        }
         pendingWirelessDebuggingConfirmation = nil
         lastWirelessPairingAddress = confirmation.pairingAddress
         if let connectAddress = confirmation.connectAddress {
@@ -779,23 +1240,31 @@ final class AgentViewModel: ObservableObject {
         runWirelessDebuggingCommand(
             command,
             displayAddress: confirmation.pairingAddress,
-            refreshAfterSuccess: false
+            refreshAfterSuccess: confirmation.connectAddress == nil,
+            connectAfterSuccessAddress: confirmation.connectAddress
         )
     }
 
     func cancelWirelessPairing() {
+        guard pendingWirelessDebuggingConfirmation != nil else {
+            lastStatusMessage = "No Wireless Debugging pairing confirmation is open."
+            return
+        }
         pendingWirelessDebuggingConfirmation = nil
         wirelessDebuggingStatus = "Wireless pairing cancelled."
         lastStatusMessage = wirelessDebuggingStatus
     }
 
     func connectWirelessDevice() {
-        let address = trimmedWirelessConnectAddress.nilIfEmpty ?? lastWirelessDeviceAddress
-        guard canConnectWirelessDevice else {
+        guard let address = wirelessConnectTargetAddress else {
             wirelessDebuggingStatus = wirelessConnectValidationMessage
             lastStatusMessage = wirelessDebuggingStatus
             return
         }
+        connectWirelessDevice(to: address)
+    }
+
+    private func connectWirelessDevice(to address: String) {
         let command = AndroidToolCommandFactory.connectWirelessDevice(rootPath: commandWorkingDirectory, hostPort: address)
         runWirelessDebuggingCommand(
             command,
@@ -806,17 +1275,18 @@ final class AgentViewModel: ObservableObject {
     }
 
     func disconnectWirelessDevice() {
-        let address = trimmedWirelessConnectAddress.nilIfEmpty ?? lastWirelessDeviceAddress
-        guard canDisconnectWirelessDevice else {
-            wirelessDebuggingStatus = "Connect a wireless device or enter its host:port before disconnecting."
+        guard let address = wirelessDisconnectAddress else {
+            wirelessDebuggingStatus = "Connect or select a wireless device before disconnecting."
             lastStatusMessage = wirelessDebuggingStatus
             return
         }
+        let disconnectedDeviceAddress = selectedWirelessConnectedDeviceSerial ?? address
         let command = AndroidToolCommandFactory.disconnectWirelessDevice(rootPath: commandWorkingDirectory, hostPort: address)
         runWirelessDebuggingCommand(
             command,
             displayAddress: address,
             refreshAfterSuccess: true,
+            disconnectedDeviceAddress: disconnectedDeviceAddress,
             clearDeviceOnSuccess: true
         )
     }
@@ -892,6 +1362,8 @@ final class AgentViewModel: ObservableObject {
         displayAddress: String,
         refreshAfterSuccess: Bool,
         selectedDeviceAddress: String? = nil,
+        disconnectedDeviceAddress: String? = nil,
+        connectAfterSuccessAddress: String? = nil,
         clearDeviceOnSuccess: Bool = false
     ) {
         isRunningWirelessDebugging = true
@@ -938,15 +1410,29 @@ final class AgentViewModel: ObservableObject {
                     selectedDeviceID = selectedDeviceAddress
                 }
                 if clearDeviceOnSuccess {
-                    if selectedDeviceID == displayAddress {
+                    let disconnectedAddresses = Set([displayAddress, disconnectedDeviceAddress].compactMap { $0 })
+                    let shouldClearWirelessHistory = disconnectedDeviceAddress == selectedWirelessConnectedDeviceSerial
+                    if disconnectedAddresses.contains(selectedDeviceID) {
                         selectedDeviceID = ""
                     }
-                    if lastWirelessDeviceAddress == displayAddress {
+                    if disconnectedAddresses.contains(lastWirelessDeviceAddress) || shouldClearWirelessHistory {
                         lastWirelessDeviceAddress = ""
                     }
                 }
-                wirelessDebuggingStatus = "\(result.command.title) succeeded. \(usefulLine)"
+                if result.command.title == "Pair Wireless Device" {
+                    wirelessDebuggingStatus = "Pairing successful"
+                } else if result.command.title == "Connect Wireless Device" {
+                    wirelessDebuggingStatus = "Device connected"
+                } else if result.command.title == "Disconnect Wireless Device" {
+                    wirelessDebuggingStatus = "Device disconnected"
+                } else {
+                    wirelessDebuggingStatus = "\(result.command.title) succeeded. \(usefulLine)"
+                }
                 lastStatusMessage = wirelessDebuggingStatus
+                if let connectAfterSuccessAddress {
+                    connectWirelessDevice(to: connectAfterSuccessAddress)
+                    return
+                }
                 if refreshAfterSuccess {
                     refreshDevices()
                 }
@@ -958,6 +1444,10 @@ final class AgentViewModel: ObservableObject {
     }
 
     func usePromptFromHistory(_ value: String) {
+        guard value != prompt else {
+            lastStatusMessage = "Prompt is already using that history item."
+            return
+        }
         previousPromptDraft = prompt
         savePromptToHistory(prompt)
         prompt = value
@@ -970,6 +1460,10 @@ final class AgentViewModel: ObservableObject {
             lastStatusMessage = "No previous prompt draft to restore."
             return
         }
+        guard previousPromptDraft != prompt else {
+            lastStatusMessage = "Prompt already matches the previous draft."
+            return
+        }
         let current = prompt
         prompt = previousPromptDraft
         self.previousPromptDraft = current
@@ -977,19 +1471,34 @@ final class AgentViewModel: ObservableObject {
         lastStatusMessage = "Restored the previous prompt draft."
     }
 
+    var canRestorePreviousPromptDraft: Bool {
+        previousPromptDraft != nil
+    }
+
     func removePromptHistory(_ value: String) {
+        let originalCount = promptHistory.count
         promptHistory.removeAll { $0 == value }
         UserDefaults.standard.set(promptHistory, forKey: promptHistoryKey)
-        lastStatusMessage = "Removed one prompt history item."
+        lastStatusMessage = promptHistory.count == originalCount
+            ? "Prompt history item was not found."
+            : "Removed one prompt history item."
     }
 
     func clearPromptHistory() {
+        guard !promptHistory.isEmpty else {
+            lastStatusMessage = "Prompt history is already empty."
+            return
+        }
         promptHistory.removeAll()
         UserDefaults.standard.removeObject(forKey: promptHistoryKey)
         lastStatusMessage = "Prompt history cleared."
     }
 
     func copyConsole() {
+        guard !commandOutput.isEmpty else {
+            lastStatusMessage = "No command console output to copy."
+            return
+        }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(filteredCommandOutput, forType: .string)
         lastStatusMessage = consoleSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1020,6 +1529,7 @@ final class AgentViewModel: ObservableObject {
             try response.write(toFile: path, atomically: true, encoding: .utf8)
             setAssistantResponseExportPath(path)
             lastExportPath = path
+            lastExportSource = "Ask"
             showAssistantResponseFeedback("Exported")
             lastStatusMessage = "Assistant response exported to \(path)."
         } catch {
@@ -1056,6 +1566,16 @@ final class AgentViewModel: ObservableObject {
         lastStatusMessage = "Console filter cleared."
     }
 
+    var isConsoleViewFiltered: Bool {
+        consoleStreamFilter != .all || !consoleSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var consoleExportHelpText: String {
+        isConsoleViewFiltered
+            ? "Exports the complete unfiltered console log, not only the visible filtered output."
+            : "Exports the complete console log."
+    }
+
     var filteredCommandOutput: String {
         let query = consoleSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let source = consoleSourceOutput
@@ -1084,17 +1604,37 @@ final class AgentViewModel: ObservableObject {
         return String(source.suffix(6_000))
     }
 
-    private var openAIAPIKey: String? {
-        ProcessInfo.processInfo.environment["OPENAI_API_KEY"]?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nilIfEmpty
+    func saveAssistantOpenAIAPIKey(_ key: String) {
+        do {
+            try AssistantModelCredentialStore.saveOpenAIAPIKey(key)
+            refreshAssistantCredentialStatus()
+            lastStatusMessage = "OpenAI API key saved in Keychain."
+        } catch {
+            refreshAssistantCredentialStatus()
+            lastStatusMessage = "Could not save OpenAI API key: \(error.localizedDescription)"
+        }
+    }
+
+    func clearAssistantOpenAIAPIKey() {
+        AssistantModelCredentialStore.clearOpenAIAPIKey()
+        refreshAssistantCredentialStatus()
+        lastStatusMessage = "OpenAI API key removed from Keychain."
+    }
+
+    private func refreshAssistantCredentialStatus() {
+        assistantCredentialStatus = assistantOpenAIAccountSummary
     }
 
     func exportConsole() {
+        guard !commandOutput.isEmpty else {
+            lastStatusMessage = "No command console output to export."
+            return
+        }
         let path = temporaryArtifactPath(prefix: "android-dev-agent-console", fileExtension: "log")
         do {
             try commandOutput.write(toFile: path, atomically: true, encoding: .utf8)
             lastExportPath = path
+            lastExportSource = "Console"
             lastStatusMessage = "Console output exported to \(path)."
         } catch {
             lastStatusMessage = "Could not export console: \(error.localizedDescription)"
@@ -1127,24 +1667,182 @@ final class AgentViewModel: ObservableObject {
             try report.write(toFile: path, atomically: true, encoding: .utf8)
             debugReportPath = path
             lastExportPath = path
+            lastExportSource = "Diagnostics"
             lastStatusMessage = "Debug report exported to \(path)."
         } catch {
             lastStatusMessage = "Could not export debug report: \(error.localizedDescription)"
         }
     }
 
+    func createSupportBundle() {
+        do {
+            let bundleURL = try AndroidDevAgentLaunchReadiness.createSupportBundle(report: supportDiagnosticsReport)
+            supportBundlePath = bundleURL.path
+            lastExportPath = bundleURL.path
+            lastExportSource = "Support Bundle"
+            lastStatusMessage = "Support bundle exported to \(bundleURL.path)."
+        } catch {
+            lastStatusMessage = "Could not export support bundle: \(error.localizedDescription)"
+        }
+    }
+
+    func uploadSupportBundle() {
+        guard !isSupportUploadRunning else { return }
+        guard hasSupportBundleFile else {
+            lastStatusMessage = supportBundlePath.isEmpty
+                ? "Create a support bundle before uploading."
+                : "Support bundle is no longer available. Create a new bundle."
+            return
+        }
+
+        isSupportUploadRunning = true
+        lastStatusMessage = "Uploading support bundle..."
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let message = await AndroidDevAgentLaunchReadiness.uploadSupportBundle(at: URL(fileURLWithPath: supportBundlePath))
+            supportUploadStatus = message
+            isSupportUploadRunning = false
+            lastExportPath = supportBundlePath
+            lastExportSource = "Support Bundle"
+            lastStatusMessage = message
+        }
+    }
+
+    private var supportDiagnosticsReport: String {
+        """
+        Android Dev Agent Support Diagnostics
+
+        Project: \(projectPathDisplay)
+        Package: \(packageNameForCommands)
+        Module: \(selectedModule)
+        Variant: \(selectedVariant)
+        Device: \(selectedDeviceID.isEmpty ? "None selected" : selectedDeviceID)
+        Scan: \(scanState.title) - \(scanState.detail)
+        Summary: \(workspaceSummary)
+
+        Launch Readiness:
+        \(launchReadinessRows.map { "- \($0.title): \($0.detail)" }.joined(separator: "\n"))
+
+        Diagnostics:
+        \(diagnosticRows.map { "- \($0.title): \($0.detail)" }.joined(separator: "\n"))
+
+        Safety:
+        \(safetyRows.map { "- \($0.title): \($0.detail)" }.joined(separator: "\n"))
+
+        Verification:
+        \(verificationRows.map { "- \($0.title): \($0.detail)" }.joined(separator: "\n"))
+
+        Last Command:
+        \(lastCommandSummary.map { "\($0.title) - \($0.status): \($0.detail)" } ?? "None")
+
+        Assistant Privacy:
+        \(assistantPrivacyDisclosure)
+        \(assistantPayloadPrivacySummary)
+
+        Console:
+        \(commandOutput)
+        """
+    }
+
     func openDebugReport() {
-        guard !debugReportPath.isEmpty else { return }
+        guard !debugReportPath.isEmpty else {
+            lastStatusMessage = "No diagnostics report is available yet."
+            return
+        }
+        guard hasDebugReportFile else {
+            lastStatusMessage = "Diagnostics report file is no longer available. Create a new report."
+            return
+        }
         NSWorkspace.shared.open(URL(fileURLWithPath: debugReportPath))
     }
 
+    func openSupportBundle() {
+        guard !supportBundlePath.isEmpty else {
+            lastStatusMessage = "No support bundle is available yet."
+            return
+        }
+        guard hasSupportBundleFile else {
+            lastStatusMessage = "Support bundle is no longer available. Create a new bundle."
+            return
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: supportBundlePath))
+    }
+
+    var hasDebugReportFile: Bool {
+        guard !debugReportPath.isEmpty else { return false }
+        return FileManager.default.fileExists(atPath: debugReportPath)
+    }
+
+    var hasSupportBundleFile: Bool {
+        guard !supportBundlePath.isEmpty else { return false }
+        return FileManager.default.fileExists(atPath: supportBundlePath)
+    }
+
+    var debugReportAvailabilityMessage: String {
+        guard !debugReportPath.isEmpty else { return "" }
+        return hasDebugReportFile ? "" : "Diagnostics report file is no longer available. Create a new report."
+    }
+
+    var supportBundleAvailabilityMessage: String {
+        guard !supportBundlePath.isEmpty else { return "" }
+        return hasSupportBundleFile ? "" : "Support bundle is no longer available. Create a new bundle."
+    }
+
+    var canUploadSupportBundle: Bool {
+        hasSupportBundleFile && !isSupportUploadRunning
+    }
+
+    var supportBundleUploadActionTitle: String {
+        isSupportUploadRunning ? "Uploading" : "Upload"
+    }
+
+    var supportBundleUploadActionSymbol: String {
+        isSupportUploadRunning ? "arrow.triangle.2.circlepath" : "icloud.and.arrow.up"
+    }
+
+    var supportBundleUploadHelpText: String {
+        if isSupportUploadRunning {
+            return "Support bundle upload is running."
+        }
+        if !hasSupportBundleFile {
+            return supportBundlePath.isEmpty
+                ? "Create a support bundle before uploading."
+                : "Support bundle is no longer available. Create a new bundle."
+        }
+        return "Upload the latest redacted support bundle when support upload consent and a configured endpoint are available."
+    }
+
     func openLastExport() {
-        guard !lastExportPath.isEmpty else { return }
+        guard !lastExportPath.isEmpty else {
+            lastStatusMessage = "No export file is available yet."
+            return
+        }
+        guard hasLastExportFile else {
+            lastStatusMessage = "Last export file is no longer available. Export again."
+            return
+        }
         NSWorkspace.shared.open(URL(fileURLWithPath: lastExportPath))
     }
 
+    var hasLastExportFile: Bool {
+        guard !lastExportPath.isEmpty else { return false }
+        return FileManager.default.fileExists(atPath: lastExportPath)
+    }
+
+    var lastExportAvailabilityMessage: String {
+        guard !lastExportPath.isEmpty else { return "" }
+        return hasLastExportFile ? "" : "Last export file is no longer available. Export again."
+    }
+
+    var lastExportSourceTitle: String {
+        lastExportSource.isEmpty ? "Export" : lastExportSource
+    }
+
     func openAssistantResponseExport() {
-        guard !assistantResponseExportPath.isEmpty else { return }
+        guard !assistantResponseExportPath.isEmpty else {
+            lastStatusMessage = "No assistant response export is available yet."
+            return
+        }
         guard FileManager.default.fileExists(atPath: assistantResponseExportPath) else {
             clearAssistantResponseExportPath()
             lastStatusMessage = "Exported assistant response file is no longer available. Export again."
@@ -1212,6 +1910,15 @@ final class AgentViewModel: ObservableObject {
         return "No assistant response export available yet."
     }
 
+    var askExportDiagnosticsActionHelpText: String {
+        if canRunAskExportDiagnosticsAction {
+            return needsAskExportRecoveryAction
+                ? "Re-export the assistant response because the previous file is missing."
+                : "Open the assistant response export file."
+        }
+        return askExportDiagnosticsActionDisabledReason
+    }
+
     func runAskExportDiagnosticsAction() {
         if needsAskExportRecoveryAction {
             exportAssistantResponse()
@@ -1257,6 +1964,7 @@ final class AgentViewModel: ObservableObject {
         }
         assistantResponseExportPath = storedPath
         lastExportPath = storedPath
+        lastExportSource = "Ask"
         return true
     }
 
@@ -1266,6 +1974,14 @@ final class AgentViewModel: ObservableObject {
             return
         }
         runCommand(lastRunnableCommandKind)
+    }
+
+    var hasRunnableCommandHistory: Bool {
+        lastRunnableCommandKind != nil
+    }
+
+    var canRetryLastCommand: Bool {
+        hasRunnableCommandHistory && !isRunningCommand
     }
 
     func copyLastCommandPreview() {
@@ -1300,6 +2016,10 @@ final class AgentViewModel: ObservableObject {
     }
 
     func resetLaunchPackageToDetected() {
+        guard canResetLaunchPackageToDetected else {
+            lastStatusMessage = launchPackageHelpText
+            return
+        }
         packageOverride = profile.packageName == "unknown.android.app" ? "" : profile.packageName
         lastStatusMessage = packageOverride.isEmpty
             ? "No detected package is available yet."
@@ -1308,12 +2028,20 @@ final class AgentViewModel: ObservableObject {
 
     func revealProjectFileInFinder(_ item: ProjectFileItem) {
         let url = URL(fileURLWithPath: projectPath).appendingPathComponent(item.path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            lastStatusMessage = "Cannot reveal missing file: \(item.path)"
+            return
+        }
         NSWorkspace.shared.activateFileViewerSelecting([url])
         lastStatusMessage = "Revealed \(item.path) in Finder."
     }
 
     func openProjectFileExternally(_ item: ProjectFileItem) {
         let url = URL(fileURLWithPath: projectPath).appendingPathComponent(item.path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            lastStatusMessage = "Cannot open missing file: \(item.path)"
+            return
+        }
         NSWorkspace.shared.open(url)
         lastStatusMessage = "Opened \(item.path) with the default macOS app."
     }
@@ -1389,12 +2117,19 @@ final class AgentViewModel: ObservableObject {
     }
 
     func selectEditorDocument(_ document: EditorDocument) {
+        guard openEditorDocuments.contains(where: { $0.path == document.path }) else {
+            lastStatusMessage = "Editor file is not open: \(document.path)"
+            return
+        }
         selectedEditorPath = document.path
         lastStatusMessage = "Focused \(document.path) in the editor."
     }
 
     func updateSelectedEditorContent(_ content: String) {
-        guard let index = selectedEditorIndex() else { return }
+        guard let index = selectedEditorIndex() else {
+            lastStatusMessage = "Open a file before editing content."
+            return
+        }
         openEditorDocuments[index].content = content
         planNeedsRefresh = true
     }
@@ -1439,6 +2174,11 @@ final class AgentViewModel: ObservableObject {
         }
         let document = openEditorDocuments[index]
         let url = URL(fileURLWithPath: projectPath).appendingPathComponent(document.path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            openEditorDocuments[index].lastError = "Backing file is missing."
+            lastStatusMessage = "Could not reload \(document.path): backing file is missing."
+            return
+        }
         do {
             let content = try String(contentsOf: url, encoding: .utf8)
             openEditorDocuments[index].content = content
@@ -1512,6 +2252,38 @@ final class AgentViewModel: ObservableObject {
         return "Editor checks: \(issueCount) issue\(issueCount == 1 ? "" : "s") found (\(longLineCount) long, \(todoCount) TODO, \(trailingWhitespaceCount) whitespace)."
     }
 
+    var canFormatSelectedEditorDocument: Bool {
+        guard let document = selectedEditorDocument else { return false }
+        return document.content.split(separator: "\n", omittingEmptySubsequences: false).contains { line in
+            guard let last = line.last else { return false }
+            return last == " " || last == "\t"
+        }
+    }
+
+    var selectedEditorFormatHelpText: String {
+        guard selectedEditorDocument != nil else {
+            return "Open a file before formatting."
+        }
+        return canFormatSelectedEditorDocument
+            ? "Remove trailing whitespace from this file."
+            : "No trailing whitespace formatting changes are needed."
+    }
+
+    var hasSelectedEditorFileOnDisk: Bool {
+        guard let document = selectedEditorDocument else { return false }
+        let path = URL(fileURLWithPath: projectPath).appendingPathComponent(document.path).path
+        return FileManager.default.fileExists(atPath: path)
+    }
+
+    var selectedEditorDiskActionHelpText: String {
+        guard let document = selectedEditorDocument else {
+            return "Open a file before using disk actions."
+        }
+        return hasSelectedEditorFileOnDisk
+            ? "Use disk actions for \(document.path)."
+            : "The backing file is no longer available on disk."
+    }
+
     func copySelectedEditorPath(absolute: Bool = false) {
         guard let document = selectedEditorDocument else {
             lastStatusMessage = "Open a file before copying its path."
@@ -1531,6 +2303,10 @@ final class AgentViewModel: ObservableObject {
             return
         }
         let url = URL(fileURLWithPath: projectPath).appendingPathComponent(document.path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            lastStatusMessage = "Cannot reveal \(document.path): backing file is missing."
+            return
+        }
         NSWorkspace.shared.activateFileViewerSelecting([url])
         lastStatusMessage = "Revealed \(document.path) in Finder."
     }
@@ -1541,6 +2317,10 @@ final class AgentViewModel: ObservableObject {
             return
         }
         let url = URL(fileURLWithPath: projectPath).appendingPathComponent(document.path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            lastStatusMessage = "Cannot open \(document.path): backing file is missing."
+            return
+        }
         NSWorkspace.shared.open(url)
         lastStatusMessage = "Opened \(document.path) externally."
     }
@@ -1562,7 +2342,10 @@ final class AgentViewModel: ObservableObject {
 
     @discardableResult
     func closeSelectedEditorDocument(discardingChanges: Bool = false) -> Bool {
-        guard let index = selectedEditorIndex() else { return false }
+        guard let index = selectedEditorIndex() else {
+            lastStatusMessage = "Open a file before closing it."
+            return false
+        }
         return closeEditorDocument(at: index, discardingChanges: discardingChanges)
     }
 
@@ -1597,7 +2380,10 @@ final class AgentViewModel: ObservableObject {
 
     @discardableResult
     private func closeEditorDocument(at index: Int, discardingChanges: Bool) -> Bool {
-        guard openEditorDocuments.indices.contains(index) else { return false }
+        guard openEditorDocuments.indices.contains(index) else {
+            lastStatusMessage = "No editor file is selected to close."
+            return false
+        }
         let document = openEditorDocuments[index]
         guard !document.isDirty || discardingChanges else {
             lastStatusMessage = "Save or revert \(document.path) before closing it."
@@ -1614,9 +2400,12 @@ final class AgentViewModel: ObservableObject {
     }
 
     func removeRecentProject(_ path: String) {
+        let originalCount = recentProjectPaths.count
         recentProjectPaths.removeAll { $0 == path }
         UserDefaults.standard.set(recentProjectPaths, forKey: recentProjectsKey)
-        lastStatusMessage = "Removed \(displayPath(path)) from recent projects."
+        lastStatusMessage = recentProjectPaths.count == originalCount
+            ? "Recent project was not found: \(displayPath(path))."
+            : "Removed \(displayPath(path)) from recent projects."
     }
 
     func clearMissingRecentProjects() {
@@ -1631,12 +2420,20 @@ final class AgentViewModel: ObservableObject {
     }
 
     func clearRecentProjects() {
+        guard !recentProjectPaths.isEmpty else {
+            lastStatusMessage = "Recent projects are already empty."
+            return
+        }
         recentProjectPaths.removeAll()
         UserDefaults.standard.removeObject(forKey: recentProjectsKey)
         lastStatusMessage = "Recent projects cleared."
     }
 
     func clearPrompt() {
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            lastStatusMessage = "Prompt is already empty."
+            return
+        }
         previousPromptDraft = prompt
         savePromptToHistory(prompt)
         prompt = ""
@@ -1680,15 +2477,170 @@ final class AgentViewModel: ObservableObject {
     }
 
     var canScanProject: Bool {
-        !isScanningProject && !resolvedProjectPath(projectPath).isEmpty
+        guard canEditProjectSelection else { return false }
+        let path = resolvedProjectPath(projectPath)
+        guard !path.isEmpty, !isUnsafeScanRoot(path) else { return false }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && isDirectory.boolValue
+    }
+
+    var canEditProjectSelection: Bool {
+        !isScanningProject && !isRunningCommand && !isRefreshingDevices && !isRunningWirelessDebugging
+    }
+
+    var projectSelectionHelpText: String {
+        if isScanningProject { return "Wait for the current scan to finish or cancel it first." }
+        if isRunningCommand { return "Wait for the current command before changing the project." }
+        if isRefreshingDevices { return "Wait for device refresh before changing the project." }
+        if isRunningWirelessDebugging { return "Wait for Wireless Debugging before changing the project." }
+        return "Choose or edit the Android project path."
+    }
+
+    var canRevealProjectPath: Bool {
+        let path = resolvedProjectPath(projectPath)
+        guard !path.isEmpty else { return false }
+        return FileManager.default.fileExists(atPath: path)
+    }
+
+    var projectRevealHelpText: String {
+        let path = resolvedProjectPath(projectPath)
+        guard !path.isEmpty else {
+            return "Choose a project path before revealing it in Finder."
+        }
+        guard FileManager.default.fileExists(atPath: path) else {
+            return "Cannot reveal missing path: \(displayPath(path))."
+        }
+        return "Reveal \(displayPath(path)) in Finder."
     }
 
     var canRunTools: Bool {
         isProjectLoaded && !isScanningProject && !isRunningCommand && !isRefreshingDevices && !isRunningWirelessDebugging
     }
 
+    var canEditBuildTarget: Bool {
+        isProjectLoaded && !isRunningCommand && !isScanningProject
+    }
+
+    var buildTargetHelpText: String {
+        if !isProjectLoaded { return "Scan a project before choosing a Gradle target." }
+        if isScanningProject { return "Wait for project scanning to finish before changing targets." }
+        if isRunningCommand { return "Wait for the current command before changing targets." }
+        return "Choose the Gradle module and build variant used by commands."
+    }
+
+    var canResetLaunchPackageToDetected: Bool {
+        canEditLaunchTarget && profile.packageName != "unknown.android.app"
+    }
+
+    var canEditLaunchTarget: Bool {
+        isProjectLoaded && !isRunningCommand && !isScanningProject
+    }
+
+    var launchPackageHelpText: String {
+        guard isProjectLoaded else {
+            return "Scan a project before editing the launch package."
+        }
+        if isScanningProject { return "Wait for project scanning to finish before editing launch package." }
+        if isRunningCommand { return "Wait for the current command before editing launch package." }
+        if profile.packageName == "unknown.android.app" {
+            return "No package was detected. Enter a package override before Launch."
+        }
+        return "Override the detected package used for Launch."
+    }
+
+    var launchActivityHelpText: String {
+        if !isProjectLoaded { return "Scan a project before editing the launch activity." }
+        if isScanningProject { return "Wait for project scanning to finish before editing launch activity." }
+        if isRunningCommand { return "Wait for the current command before editing launch activity." }
+        return "Set the Android activity used by Launch."
+    }
+
     var canRefreshDevices: Bool {
-        !isRefreshingDevices && !isRunningCommand && !isScanningProject && !isRunningWirelessDebugging
+        !isRefreshingDevices && !isRunningCommand && !isScanningProject && !isRunningWirelessDebugging && !isRefreshingDevicePreview
+    }
+
+    var refreshDevicesHelpText: String {
+        if isRefreshingDevices { return "Device refresh is already running." }
+        if isRunningCommand { return "Wait for the current command before refreshing devices." }
+        if isScanningProject { return "Wait for project scanning to finish before refreshing devices." }
+        if isRunningWirelessDebugging { return "Wait for Wireless Debugging to finish before refreshing devices." }
+        if isRefreshingDevicePreview { return "Wait for the device preview refresh to finish before refreshing devices." }
+        return "Refresh attached Android devices. This does not require a loaded project."
+    }
+
+    var canSelectDevice: Bool {
+        (!devices.isEmpty || !selectedDeviceID.isEmpty) && !isRefreshingDevices && !isRunningCommand && !isRunningWirelessDebugging && !isRefreshingDevicePreview
+    }
+
+    var selectedDeviceOption: DeviceOption? {
+        devices.first { $0.id == selectedDeviceID }
+    }
+
+    var selectedWirelessDebuggingDevice: WirelessDebuggingDevice? {
+        wirelessDebuggingDevices.first { $0.id == selectedWirelessDebuggingDeviceID }
+    }
+
+    var hasSelectedWirelessDebuggingDevice: Bool {
+        selectedWirelessDebuggingDevice != nil
+    }
+
+    var selectedDeviceDisplayName: String {
+        guard !selectedDeviceID.isEmpty else { return "No device" }
+        return selectedDeviceOption?.displayName ?? "Android Device"
+    }
+
+    var hasConnectedDevice: Bool {
+        !selectedDeviceID.isEmpty && selectedDeviceOption != nil
+    }
+
+    var shouldShowDeviceScreenPreview: Bool {
+        hasConnectedDevice
+    }
+
+    var devicePickerHelpText: String {
+        if isRefreshingDevices { return "Device refresh is already running." }
+        if isRunningCommand { return "Wait for the current command before changing devices." }
+        if isRunningWirelessDebugging { return "Wait for Wireless Debugging to finish before changing devices." }
+        if isRefreshingDevicePreview { return "Wait for the device preview refresh before changing devices." }
+        if devices.isEmpty && !selectedDeviceID.isEmpty { return "No devices are currently listed. Choose No device to clear the stale target." }
+        if devices.isEmpty { return "Refresh devices before selecting an Android target." }
+        return deviceSummary
+    }
+
+    var canRefreshDevicePreview: Bool {
+        hasConnectedDevice && !isDevicePreviewCaptureInFlight && !isRefreshingDevicePreview && !isRefreshingDevices && !isRunningCommand && !isScanningProject && !isRunningWirelessDebugging
+    }
+
+    var canSendDeviceTap: Bool {
+        hasConnectedDevice && !isSendingDeviceInput && !isDevicePreviewCaptureInFlight && !isRefreshingDevicePreview && !isRefreshingDevices && !isRunningCommand && !isScanningProject && !isRunningWirelessDebugging
+    }
+
+    var devicePreviewHelpText: String {
+        if !hasConnectedDevice { return "Connect an Android target before refreshing the preview." }
+        if isDevicePreviewCaptureInFlight || isRefreshingDevicePreview { return "Device preview refresh is already running." }
+        if isRefreshingDevices { return "Wait for device refresh to finish before refreshing preview." }
+        if isRunningCommand { return "Wait for the current command before refreshing preview." }
+        if isScanningProject { return "Wait for project scanning to finish before refreshing preview." }
+        if isRunningWirelessDebugging { return "Wait for Wireless Debugging to finish before refreshing preview." }
+        return "Refresh the \(selectedDeviceDisplayName) screen preview."
+    }
+
+    var deviceTapHelpText: String {
+        if !hasConnectedDevice { return "Connect an Android target before sending screen taps." }
+        if isSendingDeviceInput { return "A device tap is already being sent." }
+        if isDevicePreviewCaptureInFlight || isRefreshingDevicePreview { return "Wait for the current device frame before tapping the preview." }
+        if isRefreshingDevices { return "Wait for device refresh to finish before tapping the preview." }
+        if isRunningCommand { return "Wait for the current command before tapping the preview." }
+        if isScanningProject { return "Wait for project scanning to finish before tapping the preview." }
+        if isRunningWirelessDebugging { return "Wait for Wireless Debugging to finish before tapping the preview." }
+        return "Send taps to \(selectedDeviceDisplayName) from the preview."
+    }
+
+    var devicePreviewUpdatedSummary: String {
+        guard let devicePreviewUpdatedAt else { return devicePreviewStatus }
+        let formatter = DateFormatter()
+        formatter.timeStyle = .medium
+        return "\(devicePreviewStatus) Updated \(formatter.string(from: devicePreviewUpdatedAt))."
     }
 
     var canPairWirelessDevice: Bool {
@@ -1696,18 +2648,88 @@ final class AgentViewModel: ObservableObject {
     }
 
     var canConnectWirelessDevice: Bool {
-        canRunADBWirelessAction && isValidHostPort(trimmedWirelessConnectAddress.nilIfEmpty ?? lastWirelessDeviceAddress)
+        canRunADBWirelessAction && wirelessConnectTargetAddress != nil
+    }
+
+    var wirelessConnectActionTitle: String {
+        trimmedWirelessConnectAddress.isEmpty && isValidHostPort(lastWirelessDeviceAddress)
+            ? "Reconnect"
+            : "Connect"
     }
 
     var canDisconnectWirelessDevice: Bool {
-        canRunADBWirelessAction && isValidHostPort(trimmedWirelessConnectAddress.nilIfEmpty ?? lastWirelessDeviceAddress)
+        canRunADBWirelessAction && wirelessDisconnectAddress != nil
+    }
+
+    var canDisconnectSelectedWirelessDevice: Bool {
+        hasConnectedDevice && selectedDeviceOption?.isNetworkSerial == true && canRunADBWirelessAction && wirelessDisconnectAddress != nil
+    }
+
+    var canRefreshWirelessDebuggingDevices: Bool {
+        canRunADBWirelessAction
+    }
+
+    var wirelessDiscoveryHelpText: String {
+        if !canRunADBWirelessAction {
+            return "Wait for the current scan, command, device refresh, preview refresh, or wireless action to finish."
+        }
+        return "Scan this network for Android Wireless Debugging services."
+    }
+
+    var canEditWirelessDebuggingFields: Bool {
+        canRunADBWirelessAction
+    }
+
+    var canGenerateWirelessQRCode: Bool {
+        canRunADBWirelessAction
+    }
+
+    var wirelessQRCodeHelpText: String {
+        if !canRunADBWirelessAction {
+            return "Wait for the current scan, command, device refresh, preview refresh, or Wireless Debugging action to finish."
+        }
+        return "Generate a QR code for Android Wireless Debugging, then scan for the paired device."
     }
 
     var wirelessDebuggingSummary: String {
         if isRunningWirelessDebugging { return wirelessDebuggingStatus }
+        if hasConnectedDevice { return "" }
+        if wirelessDebuggingStatus == "Pairing successful"
+            || wirelessDebuggingStatus == "Device connected"
+            || wirelessDebuggingStatus == "Device disconnected" {
+            return wirelessDebuggingStatus
+        }
         let pairing = lastWirelessPairingAddress.isEmpty ? "" : " Last pairing address: \(lastWirelessPairingAddress)."
         let device = lastWirelessDeviceAddress.isEmpty ? "" : " Last wireless target: \(lastWirelessDeviceAddress)."
         return wirelessDebuggingStatus + pairing + device
+    }
+
+    var wirelessPairingHelpText: String {
+        wirelessPairingValidationMessage
+    }
+
+    var wirelessConnectHelpText: String {
+        wirelessConnectValidationMessage
+    }
+
+    var wirelessDisconnectHelpText: String {
+        if !canRunADBWirelessAction {
+            return "Wait for the current scan, command, device refresh, preview refresh, or Wireless Debugging action to finish."
+        }
+        guard let target = wirelessDisconnectAddress else {
+            return "Connect or enter a Wireless Debugging target before disconnecting."
+        }
+        return "Disconnect wireless target \(target)."
+    }
+
+    var deviceRecoveryGuidance: String {
+        if isRefreshingDevices || isRunningWirelessDebugging || !selectedDeviceID.isEmpty {
+            return ""
+        }
+        if devices.isEmpty {
+            return "No online Android target is selected. Start an emulator, connect USB debugging, or use Connect wireless devices."
+        }
+        return "Choose one of the detected devices to unlock Logcat, Launch, and connected tests."
     }
 
     var projectPathDisplay: String {
@@ -1757,6 +2779,10 @@ final class AgentViewModel: ObservableObject {
         }
     }
 
+    var hasMissingRecentProjects: Bool {
+        recentProjectRows.contains { !$0.exists }
+    }
+
     var projectSubtitle: String {
         if isScanningProject { return "Scanning project context" }
         return isProjectLoaded ? profile.packageName : "No project loaded"
@@ -1776,9 +2802,9 @@ final class AgentViewModel: ObservableObject {
         if isRefreshingDevices { return "Refreshing attached Android devices..." }
         if selectedDeviceID.isEmpty {
             let suffix = unavailableDeviceSummary.isEmpty ? "" : " \(unavailableDeviceSummary)"
-            return devices.isEmpty ? "No online device selected. Refresh devices to detect emulator or USB targets.\(suffix)" : "Choose a device for Logcat, Launch, and device tests.\(suffix)"
+            return devices.isEmpty ? "No online Android device selected. Refresh devices after starting an emulator, connecting USB debugging, or pairing Wireless Debugging.\(suffix)" : "Choose a device for Logcat, Launch, and device tests.\(suffix)"
         }
-        return "Selected \(selectedDeviceID)"
+        return hasConnectedDevice ? "Connected: \(selectedDeviceDisplayName)" : "Selected device is not currently connected."
     }
 
     var scanProgressSummary: String {
@@ -1805,9 +2831,16 @@ final class AgentViewModel: ObservableObject {
     }
 
     var taskDroidRouteSummary: String {
-        let taskDroidURL = ProcessInfo.processInfo.environment["TASKDROID_API_BASE_URL"]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-            ?? "http://127.0.0.1:8000"
-        return "TaskDroid planner route: \(taskDroidURL). If unavailable, Ask shows the TaskDroid/vLLM error without fallback."
+        if assistantModelMode == .privateLocal {
+            return "Private mode is selected. TaskDroid/OpenAI routes are not called, even if provider sharing consent is enabled."
+        }
+        if !assistantAllowsProviderSharing {
+            return "Provider sharing is off. TaskDroid/OpenAI routes are not called until the consent switch is enabled. \(assistantTaskDroidAccountSummary)."
+        }
+        if assistantTaskDroidEnabled, let url = assistantTaskDroidBaseURL {
+            return "TaskDroid planner route: \(url.absoluteString). If this configured route fails, Ask shows the TaskDroid error without fallback."
+        }
+        return "TaskDroid is optional and not active. Configure a TaskDroid URL below, or use OpenAI/private local routing."
     }
 
     var fileSearchSummary: String {
@@ -1879,7 +2912,10 @@ final class AgentViewModel: ObservableObject {
     }
 
     func toggleProjectFolder(_ item: ProjectFileItem) {
-        guard item.isDirectory else { return }
+        guard item.isDirectory else {
+            lastStatusMessage = "Only folders can be expanded or collapsed."
+            return
+        }
         if expandedProjectFolderPaths.contains(item.path) {
             expandedProjectFolderPaths.remove(item.path)
             lastStatusMessage = "Collapsed \(item.path)."
@@ -1898,311 +2934,29 @@ final class AgentViewModel: ObservableObject {
     }
 
     func expandAllProjectFolders() {
+        guard isProjectLoaded else {
+            lastStatusMessage = "Scan a project before expanding project folders."
+            return
+        }
         expandedProjectFolderPaths = Set(projectFiles.filter(\.isDirectory).map(\.path))
         lastStatusMessage = "Expanded all project folders."
     }
 
     func collapseAllProjectFolders() {
+        guard isProjectLoaded else {
+            lastStatusMessage = "Scan a project before collapsing project folders."
+            return
+        }
         expandedProjectFolderPaths.removeAll()
         lastStatusMessage = "Collapsed all project folders."
     }
 
-    private func performAssistantActions(for lower: String) -> [String] {
-        if !isProjectLoaded {
-            if canScanProject {
-                scanProject()
-                return ["Started scanning \(candidateProjectPathDisplay) so the response can use real project context."]
-            }
-            return ["No project is loaded yet; choose or paste an Android project before I can act on files or commands."]
+    private func defaultExpandedProjectFolderPaths(from items: [ProjectFileItem]) -> Set<String> {
+        var paths = Set(items.filter { $0.isDirectory && $0.depth == 0 }.map(\.path))
+        for item in items where item.isSelected && !item.isDirectory {
+            paths.formUnion(ancestorFolderPaths(for: item.path))
         }
-
-        var actions: [String] = []
-        if shouldRefreshDevices(for: lower), canRefreshDevices {
-            refreshDevices()
-            actions.append("Started device refresh.")
-            return actions
-        }
-
-        if shouldRunUnitTests(for: lower) {
-            runCommand(.unitTests)
-            actions.append("Started unit tests for \(selectedModule) \(selectedVariant).")
-            return actions
-        }
-
-        if shouldRunBuild(for: lower) {
-            runCommand(.assembleDebug)
-            actions.append("Started assemble for \(selectedModule) \(selectedVariant).")
-            return actions
-        }
-
-        if shouldCaptureLogcat(for: lower) {
-            if selectedDeviceID.isEmpty {
-                refreshDevices()
-                actions.append("Started device refresh before Logcat because no device is selected.")
-            } else {
-                runCommand(.logcat)
-                actions.append("Started Logcat capture for \(selectedDeviceID).")
-            }
-            return actions
-        }
-
-        if asksForCodeChange(lower) {
-            let openedFiles = openRepresentativeFilesForPrompt(lower)
-            if openedFiles.isEmpty {
-                actions.append("Prepared a project-specific implementation response; no editable source file matched the request closely enough to open automatically.")
-            } else {
-                actions.append("Opened likely edit targets in the editor: \(openedFiles.joined(separator: ", ")).")
-            }
-        }
-        return actions
-    }
-
-    private func makeAssistantResponse(for lower: String, actionMessages: [String]) -> String {
-        let response: String
-        if !isProjectLoaded {
-            response = """
-            I need project context before I can give a useful project-specific answer. I found this candidate path: \(candidateProjectPathDisplay).
-
-            \(actionMessages.first ?? "Open Workspace, choose the Android project, then ask again.")
-            """
-        } else if asksForOverview(lower) {
-            response = projectOverviewResponse()
-        } else if asksForLudo(lower) {
-            response = ludoImplementationResponse()
-        } else if plan.intent == "Crash and Logcat triage" {
-            response = crashResponse()
-        } else if plan.intent == "Build and dependency repair" {
-            response = buildRepairResponse()
-        } else if plan.intent == "Android UI implementation" {
-            response = uiImplementationResponse()
-        } else if plan.intent == "Test automation" {
-            response = testAutomationResponse()
-        } else {
-            response = featureImplementationResponse()
-        }
-
-        return response
-    }
-
-    private func projectOverviewResponse() -> String {
-        let name = projectDisplayName
-        let ui = snapshot.usesCompose ? "Jetpack Compose" : snapshot.usesXMLLayouts ? "XML layouts" : "mixed Android UI"
-        let tests = snapshot.testFileCount == 1 ? "1 test file" : "\(snapshot.testFileCount) test files"
-        let readme = readmeExcerpt()
-        return """
-        \(name) is an Android game project using \(ui) with Kotlin under package \(profile.packageName). I scanned \(snapshot.fileCount) files and found \(tests), a valid AndroidManifest, and \(snapshot.hasGradleWrapper ? "a Gradle wrapper for reproducible builds" : "system Gradle usage"). The app appears structured as a compact board-game codebase, with source, resources, and tests concentrated around the main app module. \(readme) For user-facing work, the safest path is to inspect the current game state model, board rendering, dice flow, win-condition logic, and tests before adding new mechanics.
-        """
-    }
-
-    private func ludoImplementationResponse() -> String {
-        """
-        I scanned \(profile.packageName) and it looks like a \(snapshot.usesCompose ? "Compose/Kotlin" : "Kotlin/XML") board-game app with \(snapshot.fileCount) indexed files and \(snapshot.testFileCount) test files. To incorporate Ludo cleanly, I would add it as a separate game mode rather than mixing it into the existing Snake Ladder rules. The implementation should introduce Ludo domain models for players, colors, tokens, dice, home paths, safe squares, captures, and win state; a ViewModel/reducer for turn sequencing; a Compose board renderer; and unit tests for dice entry, captures, extra turns, and finish rules. Files to inspect first: \(representativeFileList()). Verification should start with unit tests, then assemble, then device UI inspection.
-        """
-    }
-
-    private func crashResponse() -> String {
-        """
-        I treated this as crash triage for \(profile.packageName). The useful path is to capture Logcat, isolate the first app-owned stack frame, map it to the affected Kotlin/Java file, and add the smallest null/state guard with a regression test. I found \(snapshot.fileCount) scanned files and \(snapshot.testFileCount) tests, so I would start by searching likely ViewModel/state/game-loop files, then run the targeted unit test task. If no device is selected, refresh devices before Logcat.
-        """
-    }
-
-    private func buildRepairResponse() -> String {
-        """
-        I treated this as build/dependency repair for \(profile.packageName). The project has \(snapshot.hasGradleWrapper ? "a Gradle wrapper" : "no wrapper detected"), modules \(modules.joined(separator: ", ")), and variants \(buildVariants.joined(separator: ", ")). I would inspect settings/build files, version catalog entries, plugin versions, manifest changes, and package/activity configuration before editing. Because dependency and manifest edits can affect release behavior, the app should show a scoped diff before applying them, then run assemble and unit tests.
-        """
-    }
-
-    private func uiImplementationResponse() -> String {
-        """
-        I treated this as Android UI work for \(profile.packageName). The scan shows \(snapshot.usesCompose ? "Compose" : "XML/mixed") UI, Kotlin \(snapshot.usesKotlin ? "present" : "not detected"), and \(snapshot.testFileCount) test files. I would place the new screen near the existing app UI structure, keep state in a ViewModel or reducer, add accessibility labels/content descriptions, and add tests around state transitions. Relevant files to inspect first: \(representativeFileList()). Verification should run unit tests, assemble, and then device/UI checks if an emulator is selected.
-        """
-    }
-
-    private func testAutomationResponse() -> String {
-        """
-        I treated this as test automation for \(profile.packageName). I found \(snapshot.testFileCount) existing test files and \(snapshot.fileCount) indexed project files. The safest next step is to add focused unit tests around the changed game or UI state, then run \(gradleTaskName(prefix: "test", suffix: "UnitTest")). Device or screenshot tests should run only after selecting an emulator because they can install and control the app.
-        """
-    }
-
-    private func featureImplementationResponse() -> String {
-        """
-        I prepared a project-specific implementation response for \(profile.packageName). The workspace has \(snapshot.fileCount) scanned files, \(snapshot.testFileCount) tests, modules \(modules.joined(separator: ", ")), variants \(buildVariants.joined(separator: ", ")), and \(snapshot.hasAndroidManifest ? "a detected manifest" : "no detected manifest"). My recommended path is: inspect the closest existing game/UI state files, add the smallest isolated domain model or screen change, update tests, then run unit tests and assemble. Candidate files to inspect first: \(representativeFileList()).
-        """
-    }
-
-    private func asksForOverview(_ lower: String) -> Bool {
-        containsAny(lower, "overview", "summarize", "summary", "explain this project", "what is this project", "around 100 words")
-    }
-
-    private func asksForLudo(_ lower: String) -> Bool {
-        containsAny(lower, "ludo", "board game developer")
-    }
-
-    private func asksForCodeChange(_ lower: String) -> Bool {
-        containsAny(lower, "add ", "create ", "build ", "implement", "fix ", "repair", "refactor", "incorporate", "update ")
-    }
-
-    private func shouldRunUnitTests(for lower: String) -> Bool {
-        containsAny(lower, "run tests", "run unit", "execute tests", "verify tests", "test coverage", "run targeted tests")
-    }
-
-    private func shouldRunBuild(for lower: String) -> Bool {
-        containsAny(lower, "run build", "build apk", "assemble", "compile", "verify build")
-    }
-
-    private func shouldRefreshDevices(for lower: String) -> Bool {
-        containsAny(lower, "refresh devices", "list devices", "detect emulator", "detect device")
-    }
-
-    private func shouldCaptureLogcat(for lower: String) -> Bool {
-        containsAny(lower, "capture logcat", "run logcat", "inspect logcat", "device logs")
-    }
-
-    private func containsAny(_ value: String, _ needles: String...) -> Bool {
-        needles.contains { value.contains($0) }
-    }
-
-    private var projectDisplayName: String {
-        let name = URL(fileURLWithPath: projectPath).lastPathComponent
-        let rawName = name.isEmpty ? profile.packageName : name
-        return rawName
-            .replacingOccurrences(of: "-", with: " ")
-            .replacingOccurrences(of: "_", with: " ")
-            .capitalized
-    }
-
-    private func readmeExcerpt() -> String {
-        let url = URL(fileURLWithPath: projectPath).appendingPathComponent("README.md")
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return "" }
-        let cleaned = text
-            .replacingOccurrences(of: "#", with: "")
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .prefix(2)
-            .joined(separator: " ")
-        guard !cleaned.isEmpty else { return "" }
-        return "README notes: \(String(cleaned.prefix(180)))."
-    }
-
-    private func representativeFileList() -> String {
-        let files = projectFiles
-            .filter { !$0.isDirectory }
-            .filter { isKeyProjectFile($0.path) || $0.path.lowercased().contains("main") || $0.path.lowercased().contains("game") }
-            .prefix(5)
-            .map(\.path)
-        let selected = files.isEmpty ? projectFiles.filter { !$0.isDirectory }.prefix(5).map(\.path) : Array(files)
-        return selected.isEmpty ? "scan the Files panel for source and Gradle files" : selected.joined(separator: ", ")
-    }
-
-    private func assistantContextFiles(for lower: String) -> [AssistantContextFile] {
-        guard isProjectLoaded else { return [] }
-
-        var paths: [String] = []
-        var seen = Set<String>()
-        func appendPath(_ path: String) {
-            guard !path.isEmpty, seen.insert(path).inserted else { return }
-            paths.append(path)
-        }
-
-        [
-            "README.md",
-            "settings.gradle",
-            "settings.gradle.kts",
-            "build.gradle",
-            "build.gradle.kts",
-            "gradle/libs.versions.toml",
-            "\(selectedModule)/build.gradle",
-            "\(selectedModule)/build.gradle.kts",
-            "\(selectedModule)/src/main/AndroidManifest.xml",
-            "app/build.gradle",
-            "app/build.gradle.kts",
-            "app/src/main/AndroidManifest.xml"
-        ].forEach(appendPath)
-
-        openEditorDocuments.map(\.path).forEach(appendPath)
-        representativeFilesForPrompt(lower).prefix(12).map(\.path).forEach(appendPath)
-
-        return Array(paths.compactMap(readAssistantContextFile(relativePath:)).prefix(12))
-    }
-
-    private func readAssistantContextFile(relativePath: String) -> AssistantContextFile? {
-        let url = URL(fileURLWithPath: projectPath).appendingPathComponent(relativePath)
-        var isDirectory: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
-            return nil
-        }
-        guard shouldShowSourcePath(url.path) || relativePath == "README.md" else { return nil }
-        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
-        guard size <= 500_000 else { return nil }
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        let redacted = redactAssistantContext(content)
-        return AssistantContextFile(path: relativePath, content: String(redacted.prefix(14_000)))
-    }
-
-    private func redactAssistantContext(_ content: String) -> String {
-        let sensitiveTerms = ["api_key", "apikey", "token", "secret", "password", "signing", "keystore", "storepassword", "keypassword"]
-        return content
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { line -> String in
-                let value = String(line)
-                let lower = value.lowercased()
-                guard sensitiveTerms.contains(where: { lower.contains($0) }),
-                      let delimiterIndex = value.firstIndex(where: { $0 == "=" || $0 == ":" }) else {
-                    return value
-                }
-                return String(value[...delimiterIndex]) + " [REDACTED]"
-            }
-            .joined(separator: "\n")
-    }
-
-    private func openRepresentativeFilesForPrompt(_ lower: String) -> [String] {
-        let candidates = representativeFilesForPrompt(lower).prefix(3)
-        var opened: [String] = []
-        for item in candidates {
-            openFile(item)
-            if openEditorDocuments.contains(where: { $0.path == item.path }) {
-                opened.append(item.path)
-            }
-        }
-        return opened
-    }
-
-    private func representativeFilesForPrompt(_ lower: String) -> [ProjectFileItem] {
-        let files = projectFiles.filter { !$0.isDirectory }
-        let scored = files.compactMap { item -> (ProjectFileItem, Int)? in
-            let path = item.path.lowercased()
-            let name = item.name.lowercased()
-            var score = 0
-
-            if isKeyProjectFile(item.path) { score += 2 }
-            if path.hasSuffix(".kt") || path.hasSuffix(".java") { score += 2 }
-            if path.hasSuffix(".xml") { score += 1 }
-            if path.contains("/src/main/") { score += 2 }
-            if path.contains("/src/test/") || path.contains("/src/androidtest/") { score += shouldRunUnitTests(for: lower) ? 4 : 1 }
-            if containsAny(lower, "gradle", "dependency", "build", "compile", "sync"), path.contains("gradle") || path.contains("libs.versions.toml") {
-                score += 8
-            }
-            if containsAny(lower, "manifest", "permission", "activity"), name == "androidmanifest.xml" {
-                score += 8
-            }
-            if containsAny(lower, "screen", "ui", "compose", "layout", "theme"), containsAny(path, "mainactivity", "screen", "theme", "layout", "ui") {
-                score += 7
-            }
-            if containsAny(lower, "ludo", "snake", "ladder", "game", "board", "dice"), containsAny(path, "game", "board", "dice", "snake", "ladder", "mainactivity") {
-                score += 9
-            }
-            if containsAny(lower, "test", "coverage", "junit"), path.contains("test") {
-                score += 6
-            }
-
-            return score > 0 ? (item, score) : nil
-        }
-        let sorted = scored.sorted { left, right in
-            if left.1 == right.1 { return left.0.path < right.0.path }
-            return left.1 > right.1
-        }
-        return sorted.map(\.0)
+        return paths
     }
 
     var selectedPlanStep: AgentPlanStep? {
@@ -2215,7 +2969,7 @@ final class AgentViewModel: ObservableObject {
 
     func commandStateText(_ kind: AndroidCommandKind) -> String {
         if isScanningProject { return "Scanning" }
-        if isRunningCommand { return "Busy" }
+        if isRunningCommand { return runningCommandKind == kind ? "Running" : "Busy" }
         if isRefreshingDevices { return kind == .devices ? "Refreshing" : "Busy" }
         if isRunningWirelessDebugging { return "Wireless" }
         if kind == .devices { return isRefreshingDevices ? "Refreshing" : "Ready" }
@@ -2244,6 +2998,22 @@ final class AgentViewModel: ObservableObject {
         return nil
     }
 
+    var runningCommandStopTitle: String {
+        guard isRunningCommand else { return "Stop Command" }
+        if let runningCommandKind {
+            return "Stop \(runningCommandKind.rawValue)"
+        }
+        return lastCommandTitle == "Idle" ? "Stop Command" : "Stop \(lastCommandTitle)"
+    }
+
+    var runningCommandStopHelpText: String {
+        guard isRunningCommand else { return "No Run Tool command is currently running." }
+        if let runningCommandKind {
+            return "Stop the active \(runningCommandKind.rawValue) command."
+        }
+        return "Stop the currently running command."
+    }
+
     func displayState(for step: AgentPlanStep) -> String {
         if step.order == 1 { return "Done" }
         if isProjectLoaded && step.title == "Scan Android workspace" { return "Done" }
@@ -2268,9 +3038,110 @@ final class AgentViewModel: ObservableObject {
             DiagnosticRow(title: "Git Worktree", detail: gitSummary, symbol: "arrow.triangle.branch", severity: gitSummary.contains("not found") ? "warning" : "ready"),
             DiagnosticRow(title: "Modules", detail: modules.joined(separator: ", "), symbol: "square.stack.3d.up", severity: modules.isEmpty ? "warning" : "ready"),
             DiagnosticRow(title: "Package", detail: packageNameForCommands == "unknown.android.app" ? "Package missing; set override before Launch" : packageNameForCommands, symbol: "shippingbox", severity: packageNameForCommands == "unknown.android.app" ? "warning" : "ready"),
-            DiagnosticRow(title: "Ask Export", detail: askExportDiagnosticsDetail, symbol: "square.and.arrow.down", severity: askExportDiagnosticsSeverity),
-            DiagnosticRow(title: "Last Export", detail: lastExportPath.isEmpty ? "No console, assistant response, or debug report exported yet" : displayPath(lastExportPath), symbol: "doc.text.magnifyingglass", severity: lastExportPath.isEmpty ? "neutral" : "ready")
+            DiagnosticRow(title: "Ask Response Export", detail: askExportDiagnosticsDetail, symbol: "square.and.arrow.down", severity: askExportDiagnosticsSeverity),
+            DiagnosticRow(title: "Latest App Export", detail: lastExportDiagnosticsDetail, symbol: "doc.text.magnifyingglass", severity: lastExportDiagnosticsSeverity)
         ]
+    }
+
+    var launchReadinessRows: [DiagnosticRow] {
+        [
+            DiagnosticRow(
+                title: "Crash Reporting",
+                detail: AndroidDevAgentLaunchReadiness.crashReportingSummary,
+                symbol: "waveform.path.ecg.rectangle",
+                severity: AndroidDevAgentLaunchReadiness.crashReportingSeverity
+            ),
+            DiagnosticRow(
+                title: "Crash Symbolication",
+                detail: AndroidDevAgentLaunchReadiness.crashSymbolicationSummary,
+                symbol: "ladybug",
+                severity: AndroidDevAgentLaunchReadiness.crashSymbolicationSeverity
+            ),
+            DiagnosticRow(
+                title: "Telemetry",
+                detail: AndroidDevAgentLaunchReadiness.telemetrySummary,
+                symbol: "chart.line.uptrend.xyaxis",
+                severity: AndroidDevAgentLaunchReadiness.telemetrySeverity
+            ),
+            DiagnosticRow(
+                title: "License Activation",
+                detail: AndroidDevAgentLaunchReadiness.licenseSummary,
+                symbol: "key.horizontal",
+                severity: AndroidDevAgentLaunchReadiness.licenseSeverity
+            ),
+            DiagnosticRow(
+                title: "Privacy Audit",
+                detail: AndroidDevAgentLaunchReadiness.privacyAuditSummary,
+                symbol: "lock.doc",
+                severity: AndroidDevAgentLaunchReadiness.privacyAuditSeverity
+            ),
+            DiagnosticRow(
+                title: "Support Redaction",
+                detail: AndroidDevAgentLaunchReadiness.supportRedactionSummary,
+                symbol: "eye.slash",
+                severity: AndroidDevAgentLaunchReadiness.supportRedactionSeverity
+            ),
+            DiagnosticRow(
+                title: "Support Upload",
+                detail: AndroidDevAgentLaunchReadiness.supportUploadSummary,
+                symbol: "icloud.and.arrow.up",
+                severity: AndroidDevAgentLaunchReadiness.supportUploadSeverity
+            ),
+            DiagnosticRow(
+                title: "Diagnostic Version",
+                detail: AndroidDevAgentLaunchReadiness.diagnosticVersionStampSummary,
+                symbol: "number.square",
+                severity: AndroidDevAgentLaunchReadiness.diagnosticVersionStampSeverity
+            ),
+            DiagnosticRow(
+                title: "Onboarding",
+                detail: AndroidDevAgentLaunchReadiness.onboardingSummary,
+                symbol: "list.bullet.clipboard",
+                severity: AndroidDevAgentLaunchReadiness.onboardingSeverity
+            ),
+            DiagnosticRow(
+                title: "Support Bundle",
+                detail: supportBundleDiagnosticsDetail,
+                symbol: "shippingbox.and.arrow.backward",
+                severity: supportBundleDiagnosticsSeverity
+            ),
+            DiagnosticRow(
+                title: "Release Notes",
+                detail: AndroidDevAgentLaunchReadiness.releaseNotesSummary,
+                symbol: "doc.plaintext",
+                severity: AndroidDevAgentLaunchReadiness.releaseNotesSeverity
+            )
+        ]
+    }
+
+    private var supportBundleDiagnosticsDetail: String {
+        guard !supportBundlePath.isEmpty else {
+            return "No support bundle exported yet."
+        }
+        if hasSupportBundleFile {
+            return "Available at \(displayPath(supportBundlePath))."
+        }
+        return "Missing support bundle: \(displayPath(supportBundlePath)). Export again."
+    }
+
+    private var supportBundleDiagnosticsSeverity: String {
+        guard !supportBundlePath.isEmpty else { return "neutral" }
+        return hasSupportBundleFile ? "ready" : "warning"
+    }
+
+    private var lastExportDiagnosticsDetail: String {
+        guard !lastExportPath.isEmpty else {
+            return "No console, assistant response, or debug report exported yet"
+        }
+        if hasLastExportFile {
+            return "\(lastExportSourceTitle): \(displayPath(lastExportPath))"
+        }
+        return "Missing \(lastExportSourceTitle): \(displayPath(lastExportPath)). Export again."
+    }
+
+    private var lastExportDiagnosticsSeverity: String {
+        guard !lastExportPath.isEmpty else { return "neutral" }
+        return hasLastExportFile ? "ready" : "warning"
     }
 
     private var askExportDiagnosticsDetail: String {
@@ -2291,11 +3162,21 @@ final class AgentViewModel: ObservableObject {
     var safetyRows: [DiagnosticRow] {
         [
             DiagnosticRow(title: "Workspace boundary", detail: "Commands run from \(projectPathDisplay)", symbol: "folder.badge.gearshape", severity: isProjectLoaded ? "ready" : "neutral"),
+            DiagnosticRow(title: "Scoped editor diff", detail: editorScopedDiffSafetyDetail, symbol: "doc.text.magnifyingglass", severity: selectedEditorDocument?.isDirty == true ? "warning" : "ready"),
+            DiagnosticRow(title: "Undo checkpoint", detail: lastEditorUndoCheckpointPath.isEmpty ? "Editor saves create a rollback checkpoint before writing." : "Latest checkpoint: \(displayPath(lastEditorUndoCheckpointPath))", symbol: "arrow.uturn.backward.circle", severity: "ready"),
+            DiagnosticRow(title: "Secret scanner", detail: lastEditorSecretScanSummary, symbol: "key.horizontal", severity: lastEditorSecretScanSummary.contains("Blocked") ? "warning" : "ready"),
             DiagnosticRow(title: "Risk confirmation", detail: "Launch, clear logs, and device tests ask before running.", symbol: "exclamationmark.shield", severity: "ready"),
             DiagnosticRow(title: "Timeouts", detail: "Gradle and ADB commands have command-specific timeouts.", symbol: "timer", severity: "ready"),
             DiagnosticRow(title: "Device preflight", detail: "Device commands require a selected target.", symbol: "iphone.gen3.radiowaves.left.and.right", severity: selectedDeviceID.isEmpty ? "warning" : "ready"),
             DiagnosticRow(title: "Root scan guard", detail: "Broad filesystem scans are blocked.", symbol: "lock.shield", severity: "ready")
         ]
+    }
+
+    private var editorScopedDiffSafetyDetail: String {
+        if let document = selectedEditorDocument, document.isDirty {
+            return "Pending \(document.path): \(makeEditorScopedDiff(path: document.path, original: document.savedContent, proposed: document.content).summary)."
+        }
+        return lastEditorSaveSafetySummary
     }
 
     var diffPreviewLines: [String] {
@@ -2305,6 +3186,9 @@ final class AgentViewModel: ObservableObject {
                 "// Choose a project folder to scan files, create a patch preview, and enable verification.",
                 "// The agent will keep file counts, tests, and Gradle status hidden until then."
             ]
+        }
+        if let document = selectedEditorDocument, document.isDirty {
+            return makeEditorScopedDiff(path: document.path, original: document.savedContent, proposed: document.content).lines
         }
 
         let request = plan.intent
@@ -2417,11 +3301,71 @@ final class AgentViewModel: ObservableObject {
         }
     }
 
-    private func gradleTaskName(prefix: String, suffix: String) -> String {
+    func gradleTaskName(prefix: String, suffix: String) -> String {
         let variant = selectedVariant.trimmingCharacters(in: .whitespacesAndNewlines)
         let module = selectedModule.trimmingCharacters(in: .whitespacesAndNewlines)
         let task = "\(prefix)\(variant)\(suffix)"
         return module.isEmpty ? task : ":\(module):\(task)"
+    }
+
+    private func defaultDeviceTestStopPackages(for basePackageName: String) -> [String] {
+        guard isKnownAndroidPackageName(basePackageName) else { return [] }
+        return orderedUniquePackages([basePackageName, "\(basePackageName).test"])
+    }
+
+    private func instrumentationStopPackages(in output: String, basePackageName: String) -> [String] {
+        guard isKnownAndroidPackageName(basePackageName) else { return [] }
+        let parsedPackages = output
+            .split(separator: "\n")
+            .compactMap { instrumentationPackageDescriptor(from: String($0)) }
+            .filter { descriptor in
+                isInstrumentationMatch(descriptor.targetPackage, basePackageName: basePackageName)
+                    || isInstrumentationMatch(descriptor.instrumentationPackage, basePackageName: basePackageName)
+            }
+            .flatMap { [$0.instrumentationPackage, $0.targetPackage] }
+        return orderedUniquePackages(parsedPackages)
+    }
+
+    private func instrumentationPackageDescriptor(from line: String) -> (instrumentationPackage: String, targetPackage: String)? {
+        let prefix = "instrumentation:"
+        guard let prefixRange = line.range(of: prefix),
+              let slashIndex = line[prefixRange.upperBound...].firstIndex(of: "/"),
+              let targetRange = line.range(of: "(target=") else {
+            return nil
+        }
+        let instrumentationPackage = String(line[prefixRange.upperBound..<slashIndex])
+        let targetStart = targetRange.upperBound
+        let targetTail = line[targetStart...]
+        guard let targetEnd = targetTail.firstIndex(of: ")") else { return nil }
+        let targetPackage = String(targetTail[..<targetEnd])
+        guard isKnownAndroidPackageName(instrumentationPackage),
+              isKnownAndroidPackageName(targetPackage) else {
+            return nil
+        }
+        return (instrumentationPackage, targetPackage)
+    }
+
+    private func isInstrumentationMatch(_ packageName: String, basePackageName: String) -> Bool {
+        packageName == basePackageName
+            || packageName == "\(basePackageName).test"
+            || packageName.hasPrefix("\(basePackageName).")
+    }
+
+    private func orderedUniquePackages(_ packageNames: [String]) -> [String] {
+        var seen = Set<String>()
+        return packageNames.filter { packageName in
+            guard isKnownAndroidPackageName(packageName), !seen.contains(packageName) else { return false }
+            seen.insert(packageName)
+            return true
+        }
+    }
+
+    private func isKnownAndroidPackageName(_ packageName: String) -> Bool {
+        let trimmed = packageName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "unknown.android.app" else { return false }
+        return trimmed.allSatisfy { character in
+            character.isLetter || character.isNumber || character == "." || character == "_"
+        }
     }
 
     private func summarizeCommandResult(_ result: CommandResult, status: String, elapsed: TimeInterval) -> CommandRunSummary {
@@ -2487,6 +3431,10 @@ final class AgentViewModel: ObservableObject {
             : "\(unavailableDeviceCount) unavailable target\(unavailableDeviceCount == 1 ? "" : "s") ignored."
         if selectedDeviceID.isEmpty || !parsed.contains(where: { $0.id == selectedDeviceID }) {
             selectedDeviceID = parsed.first?.id ?? ""
+        } else if isDevicePreviewAutoRefreshEnabled, hasConnectedDevice, devicePreviewAutoRefreshTask == nil {
+            startDevicePreviewAutoRefresh()
+        } else if !hasConnectedDevice {
+            stopDevicePreviewAutoRefresh(updateStatus: false)
         }
         selectedSessionTab = .diagnostics
         if !succeeded {
@@ -2517,20 +3465,250 @@ final class AgentViewModel: ObservableObject {
         return openEditorDocuments.startIndex
     }
 
+    private func editorSaveURL(for document: EditorDocument) throws -> URL {
+        let root = URL(fileURLWithPath: resolvedProjectPath(projectPath), isDirectory: true)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        let fileURL = root
+            .appendingPathComponent(document.path)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+        let rootPath = root.path.hasSuffix("/") ? root.path : "\(root.path)/"
+
+        guard !document.path.hasPrefix("/") else {
+            throw EditorSaveSafetyError.blocked("Editor save path must be relative to the selected workspace.")
+        }
+        guard fileURL.path.hasPrefix(rootPath) else {
+            throw EditorSaveSafetyError.blocked("Editor save blocked because \(document.path) resolves outside the selected workspace.")
+        }
+        return fileURL
+    }
+
     private func saveEditorDocument(at index: Int) {
-        guard openEditorDocuments.indices.contains(index) else { return }
+        guard openEditorDocuments.indices.contains(index) else {
+            lastStatusMessage = "No editor file is selected to save."
+            return
+        }
         let document = openEditorDocuments[index]
-        let url = URL(fileURLWithPath: projectPath).appendingPathComponent(document.path)
+        let diff = makeEditorScopedDiff(path: document.path, original: document.savedContent, proposed: document.content)
+        let findings = editorSecretFindings(original: document.savedContent, proposed: document.content)
+        guard findings.isEmpty else {
+            blockEditorSaveForSecrets(at: index, document: document, diff: diff, findings: findings)
+            return
+        }
+
         do {
+            let url = try editorSaveURL(for: document)
+            let checkpointPath = try createEditorUndoCheckpoint(for: document, fileURL: url)
             try document.content.write(to: url, atomically: true, encoding: .utf8)
             openEditorDocuments[index].savedContent = document.content
             openEditorDocuments[index].lastError = nil
+            lastEditorSaveDiffLines = diff.lines
+            lastEditorUndoCheckpointPath = checkpointPath
+            lastEditorSecretScanSummary = "Secret scan passed for \(document.path)."
+            lastEditorSaveSafetySummary = "Saved \(document.path) after scoped diff review with an undo checkpoint."
             planNeedsRefresh = true
-            lastStatusMessage = "Saved \(document.path)."
+            appendOutput("Editor save safety: \(document.path) \(diff.summary). Undo checkpoint: \(checkpointPath)\n")
+            lastStatusMessage = "Saved \(document.path) with scoped diff, secret scan, and undo checkpoint."
         } catch {
             openEditorDocuments[index].lastError = error.localizedDescription
             lastStatusMessage = "Could not save \(document.path): \(error.localizedDescription)"
         }
+    }
+
+    private func blockEditorSaveForSecrets(
+        at index: Int,
+        document: EditorDocument,
+        diff: EditorScopedDiff,
+        findings: [EditorSecretFinding]
+    ) {
+        let findingSummary = findings.map(\.summary).joined(separator: ", ")
+        let error = "Secret scanner blocked save: \(findingSummary)"
+        openEditorDocuments[index].lastError = error
+        lastEditorSaveDiffLines = diff.lines
+        lastEditorSecretScanSummary = "Blocked \(document.path): \(findingSummary)."
+        lastEditorSaveSafetySummary = "Save blocked before disk write for \(document.path)."
+        selectedSessionTab = .checks
+        appendOutput("Editor save blocked by secret scanner for \(document.path): \(findingSummary)\n")
+        lastStatusMessage = "Save blocked for \(document.path): secret-like value detected (\(findingSummary))."
+    }
+
+    private func createEditorUndoCheckpoint(for document: EditorDocument, fileURL: URL) throws -> String {
+        let original = try String(contentsOf: fileURL, encoding: .utf8)
+        let root = try writableEditorCheckpointRoot()
+        let timestamp = editorCheckpointTimestamp()
+        let checkpointURL = root
+            .appendingPathComponent(timestamp, isDirectory: true)
+            .appendingPathComponent(sanitizedCheckpointRelativePath(document.path), isDirectory: false)
+        try FileManager.default.createDirectory(at: checkpointURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try original.write(to: checkpointURL, atomically: true, encoding: .utf8)
+        return checkpointURL.path
+    }
+
+    private func writableEditorCheckpointRoot() throws -> URL {
+        let projectKey = stableProjectKey(for: resolvedProjectPath(projectPath))
+        let appSupportRoot = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("Android Dev Agent/UndoCheckpoints/\(projectKey)", isDirectory: true)
+        let candidates = [appSupportRoot, FileManager.default.temporaryDirectory.appendingPathComponent("AndroidDevAgentUndoCheckpoints/\(projectKey)", isDirectory: true)]
+            .compactMap { $0 }
+        var lastError: Error?
+
+        for candidate in candidates {
+            do {
+                try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
+                return candidate
+            } catch {
+                lastError = error
+            }
+        }
+
+        throw lastError ?? EditorSaveSafetyError.blocked("No writable undo checkpoint location is available.")
+    }
+
+    private func editorCheckpointTimestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        return formatter.string(from: Date())
+    }
+
+    private func stableProjectKey(for path: String) -> String {
+        var hash: UInt64 = 1_469_598_103_934_665_603
+        for byte in path.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        let name = URL(fileURLWithPath: path).lastPathComponent.nilIfEmpty ?? "workspace"
+        return "\(sanitizedCheckpointPathComponent(name))-\(String(hash, radix: 16))"
+    }
+
+    private func sanitizedCheckpointRelativePath(_ path: String) -> String {
+        let parts = path.split(separator: "/").map { sanitizedCheckpointPathComponent(String($0)) }
+        return parts.isEmpty ? "file.txt" : parts.joined(separator: "/")
+    }
+
+    private func sanitizedCheckpointPathComponent(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        let sanitized = String(value.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" })
+        return String((sanitized.nilIfEmpty ?? "item").prefix(96))
+    }
+
+    private func makeEditorScopedDiff(path: String, original: String, proposed: String) -> EditorScopedDiff {
+        let originalLines = original.components(separatedBy: "\n")
+        let proposedLines = proposed.components(separatedBy: "\n")
+        let lineCount = max(originalLines.count, proposedLines.count)
+        let previewLimit = 24
+        var lines = ["@@ \(path) @@"]
+        var added = 0
+        var removed = 0
+        var changed = 0
+        var omitted = 0
+
+        for index in 0..<lineCount {
+            let oldLine = index < originalLines.count ? originalLines[index] : nil
+            let newLine = index < proposedLines.count ? proposedLines[index] : nil
+            guard oldLine != newLine else { continue }
+
+            if lines.count <= previewLimit {
+                lines.append("@@ line \(index + 1) @@")
+                if let oldLine {
+                    lines.append("- \(redactedEditorDiffLine(oldLine))")
+                }
+                if let newLine {
+                    lines.append("+ \(redactedEditorDiffLine(newLine))")
+                }
+            } else {
+                omitted += 1
+            }
+
+            switch (oldLine, newLine) {
+            case (nil, .some):
+                added += 1
+            case (.some, nil):
+                removed += 1
+            case (.some, .some):
+                changed += 1
+            case (nil, nil):
+                break
+            }
+        }
+
+        if omitted > 0 {
+            lines.append("// ... \(omitted) additional changed line\(omitted == 1 ? "" : "s") omitted")
+        }
+        if lines.count == 1 {
+            lines.append("// No editor changes pending")
+        }
+        return EditorScopedDiff(lines: lines, addedLineCount: added, removedLineCount: removed, changedLineCount: changed)
+    }
+
+    private func editorSecretFindings(original: String, proposed: String) -> [EditorSecretFinding] {
+        let originalLines = original.components(separatedBy: "\n")
+        let proposedLines = proposed.components(separatedBy: "\n")
+        return proposedLines.enumerated().compactMap { index, line in
+            let changed = index >= originalLines.count || originalLines[index] != line
+            guard changed, let label = editorSecretLabel(in: line) else { return nil }
+            return EditorSecretFinding(lineNumber: index + 1, label: label)
+        }
+    }
+
+    private func redactedEditorDiffLine(_ line: String) -> String {
+        if let label = editorSecretLabel(in: line) {
+            return "[REDACTED \(label)]"
+        }
+        return line
+    }
+
+    private func editorSecretLabel(in line: String) -> String? {
+        let lower = line.lowercased()
+        if lower.contains("-----begin") && lower.contains("private key") {
+            return "private key"
+        }
+        if lower.contains("sk-") || lower.contains("xoxb-") || line.contains("AIza") {
+            return "API token"
+        }
+
+        let sensitiveTerms: [(term: String, label: String)] = [
+            ("api_key", "API key"),
+            ("apikey", "API key"),
+            ("api-key", "API key"),
+            ("client_secret", "client secret"),
+            ("access_token", "access token"),
+            ("refresh_token", "refresh token"),
+            ("auth_token", "auth token"),
+            ("storepassword", "keystore password"),
+            ("keypassword", "key password"),
+            ("password", "password"),
+            ("private_key", "private key"),
+            ("keystore", "keystore")
+        ]
+
+        guard let match = sensitiveTerms.first(where: { lower.contains($0.term) }),
+              let delimiterIndex = line.firstIndex(where: { $0 == "=" || $0 == ":" }) else {
+            return nil
+        }
+
+        let valueStart = line.index(after: delimiterIndex)
+        let value = line[valueStart...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        let normalized = value.lowercased()
+        guard !normalized.isEmpty,
+              normalized != "null",
+              normalized != "nil",
+              normalized != "false",
+              !normalized.contains("redacted"),
+              !normalized.contains("placeholder"),
+              !normalized.contains("example"),
+              !normalized.contains("todo"),
+              !normalized.contains("changeme"),
+              !normalized.hasPrefix("system.getenv"),
+              !normalized.hasPrefix("project.findproperty") else {
+            return nil
+        }
+        return match.label
     }
 
     private func appendOutput(_ value: String) {
@@ -2556,7 +3734,7 @@ final class AgentViewModel: ObservableObject {
         snapshot = scannedSnapshot
         profile = ProjectProfile.from(snapshot: scannedSnapshot)
         projectFiles = makeProjectFiles(rootPath: rootPath, snapshot: scannedSnapshot)
-        expandedProjectFolderPaths.removeAll()
+        expandedProjectFolderPaths = defaultExpandedProjectFolderPaths(from: projectFiles)
         modules = discoverModules(rootPath: rootPath)
         if modules.isEmpty { modules = ["app"] }
         if !modules.contains(selectedModule) { selectedModule = modules.first ?? "app" }
@@ -2627,16 +3805,73 @@ final class AgentViewModel: ObservableObject {
     }
 
     private var canRunADBWirelessAction: Bool {
-        !isScanningProject && !isRunningCommand && !isRefreshingDevices && !isRunningWirelessDebugging
+        !isScanningProject && !isRunningCommand && !isRefreshingDevices && !isRunningWirelessDebugging && !isRefreshingDevicePreview && !isSendingDeviceInput
     }
 
     private var trimmedWirelessConnectAddress: String {
         wirelessConnectAddress.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var wirelessDisconnectAddress: String? {
+        if let selectedAddress = selectedWirelessDisconnectTargetAddress {
+            return selectedAddress
+        }
+        if let address = trimmedWirelessConnectAddress.nilIfEmpty, isValidHostPort(address) {
+            return address
+        }
+        if isValidHostPort(lastWirelessDeviceAddress) {
+            return lastWirelessDeviceAddress
+        }
+        return nil
+    }
+
+    private var selectedWirelessConnectedDeviceSerial: String? {
+        guard hasConnectedDevice, selectedDeviceOption?.isNetworkSerial == true else { return nil }
+        let selectedSerial = selectedDeviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selectedSerial.isEmpty else { return nil }
+        return selectedSerial
+    }
+
+    private var selectedWirelessDisconnectTargetAddress: String? {
+        guard let selectedSerial = selectedWirelessConnectedDeviceSerial else { return nil }
+        if isValidHostPort(selectedSerial) {
+            return selectedSerial
+        }
+        if let discoveredAddress = discoveredConnectAddress(forADBSerial: selectedSerial) {
+            return discoveredAddress
+        }
+        if isValidHostPort(lastWirelessDeviceAddress) {
+            return lastWirelessDeviceAddress
+        }
+        return selectedSerial.contains("._adb-tls-connect._tcp") ? selectedSerial : nil
+    }
+
+    private func discoveredConnectAddress(forADBSerial serial: String) -> String? {
+        guard let serviceName = wirelessServiceName(fromADBSerial: serial) else { return nil }
+        return wirelessDebuggingDevices.first { $0.serviceName == serviceName }?.connectAddress
+    }
+
+    private func wirelessServiceName(fromADBSerial serial: String) -> String? {
+        guard let range = serial.range(of: "._adb-tls-connect._tcp") else { return nil }
+        return String(serial[..<range.lowerBound]).nilIfEmpty
+    }
+
+    private var wirelessConnectTargetAddress: String? {
+        if let selectedAddress = selectedWirelessDebuggingDevice?.connectAddress {
+            return selectedAddress
+        }
+        if let address = trimmedWirelessConnectAddress.nilIfEmpty, isValidHostPort(address) {
+            return address
+        }
+        if isValidHostPort(lastWirelessDeviceAddress) {
+            return lastWirelessDeviceAddress
+        }
+        return nil
+    }
+
     private var wirelessPairingValidationMessage: String {
         if !canRunADBWirelessAction {
-            return "Wait for the current scan, command, device refresh, or Wireless Debugging action to finish."
+            return "Wait for the current scan, command, device refresh, preview refresh, or Wireless Debugging action to finish."
         }
         if wirelessPairingCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "Enter the Wireless Debugging pairing code shown on the Android device."
@@ -2646,12 +3881,15 @@ final class AgentViewModel: ObservableObject {
 
     private var wirelessConnectValidationMessage: String {
         if !canRunADBWirelessAction {
-            return "Wait for the current scan, command, device refresh, or Wireless Debugging action to finish."
+            return "Wait for the current scan, command, device refresh, preview refresh, or Wireless Debugging action to finish."
         }
-        if !isValidHostPort(trimmedWirelessConnectAddress.nilIfEmpty ?? lastWirelessDeviceAddress) {
-            return "Enter or discover the Wireless Debugging connect address as host:port."
+        if trimmedWirelessConnectAddress.isEmpty, isValidHostPort(lastWirelessDeviceAddress) {
+            return "Ready to reconnect last wireless target \(lastWirelessDeviceAddress)."
         }
-        return "Ready to connect wireless device."
+        if wirelessConnectTargetAddress == nil {
+            return "Select a discovered wireless device with a connect service, or scan again."
+        }
+        return "Ready to connect wireless target \(wirelessConnectTargetAddress ?? "selected device")."
     }
 
     private func parseWirelessDebuggingServices(_ output: String) -> (pairingAddress: String?, connectAddress: String?) {
@@ -2667,6 +3905,58 @@ final class AgentViewModel: ObservableObject {
         return (pairingAddress, connectAddress)
     }
 
+    private func parseWirelessDebuggingDeviceList(_ output: String) -> [WirelessDebuggingDevice] {
+        var devicesByHost: [String: (serviceName: String, connectAddress: String?, pairingAddress: String?)] = [:]
+
+        for line in output.split(separator: "\n").map(String.init) {
+            let isPairingService = line.contains("_adb-tls-pairing._tcp")
+            let isConnectService = line.contains("_adb-tls-connect._tcp")
+            guard isPairingService || isConnectService,
+                  let address = wirelessHostPort(in: line),
+                  let host = wirelessHost(in: address) else {
+                continue
+            }
+
+            var device = devicesByHost[host] ?? (serviceName: "", connectAddress: nil, pairingAddress: nil)
+            if device.serviceName.isEmpty, let serviceName = wirelessServiceName(in: line) {
+                device.serviceName = serviceName
+            }
+            if isPairingService {
+                device.pairingAddress = address
+            }
+            if isConnectService {
+                device.connectAddress = address
+            }
+            devicesByHost[host] = device
+        }
+
+        return devicesByHost
+            .map { host, device in
+                WirelessDebuggingDevice(
+                    id: host,
+                    serviceName: device.serviceName,
+                    host: host,
+                    connectAddress: device.connectAddress,
+                    pairingAddress: device.pairingAddress
+                )
+            }
+            .sorted { lhs, rhs in
+                lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+    }
+
+    private func applySelectedWirelessDebuggingDevice() {
+        guard let selectedWirelessDebuggingDevice else { return }
+        if let connectAddress = selectedWirelessDebuggingDevice.connectAddress {
+            wirelessConnectAddress = connectAddress
+            lastWirelessDeviceAddress = connectAddress
+        }
+        if let pairingAddress = selectedWirelessDebuggingDevice.pairingAddress {
+            lastWirelessPairingAddress = pairingAddress
+        }
+        wirelessDeviceDiscoveryStatus = "Selected \(selectedWirelessDebuggingDevice.displayName)."
+    }
+
     private func wirelessHostPort(in line: String) -> String? {
         let tokens = line
             .split(whereSeparator: \.isWhitespace)
@@ -2674,6 +3964,48 @@ final class AgentViewModel: ObservableObject {
                 token.trimmingCharacters(in: CharacterSet(charactersIn: ".,;"))
             }
         return tokens.last(where: { isValidHostPort($0) })
+    }
+
+    private func wirelessHost(in address: String) -> String? {
+        let parts = address.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, !parts[0].isEmpty else { return nil }
+        return String(parts[0])
+    }
+
+    private func wirelessServiceName(in line: String) -> String? {
+        line
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .first(where: { $0.contains("._adb-tls-") })?
+            .components(separatedBy: "._adb-tls-")
+            .first?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .nilIfEmpty
+    }
+
+    private func makeQRCodeImage(from payload: String) -> NSImage? {
+        let filter = CIFilter(name: "CIQRCodeGenerator")
+        filter?.setValue(Data(payload.utf8), forKey: "inputMessage")
+        filter?.setValue("M", forKey: "inputCorrectionLevel")
+        guard let outputImage = filter?.outputImage else { return nil }
+        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+        let representation = NSCIImageRep(ciImage: scaledImage)
+        let image = NSImage(size: representation.size)
+        image.addRepresentation(representation)
+        return image
+    }
+
+    private func randomADBToken(length: Int) -> String {
+        let characters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+        return String((0..<length).compactMap { _ in characters.randomElement() })
+    }
+
+    private func escapedQRCodeValue(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: ";", with: "\\;")
+            .replacingOccurrences(of: ",", with: "\\,")
+            .replacingOccurrences(of: ":", with: "\\:")
     }
 
     private func isValidHostPort(_ value: String) -> Bool {
@@ -2801,159 +4133,6 @@ final class AgentViewModel: ObservableObject {
         return values
     }
 
-    private func makeProjectFiles(rootPath: String, snapshot: WorkspaceSnapshot) -> [ProjectFileItem] {
-        let rootURL = URL(fileURLWithPath: rootPath)
-        var relativeFilePaths: [String] = []
-        var seenPaths = Set<String>()
-
-        func appendFile(relativePath: String) {
-            guard seenPaths.insert(relativePath).inserted else { return }
-            relativeFilePaths.append(relativePath)
-        }
-
-        let importantPaths = [
-            "settings.gradle",
-            "settings.gradle.kts",
-            "build.gradle",
-            "build.gradle.kts",
-            "gradle/libs.versions.toml",
-            "app/build.gradle",
-            "app/build.gradle.kts",
-            "app/src/main/AndroidManifest.xml"
-        ]
-
-        for relativePath in importantPaths {
-            let absolute = rootURL.appendingPathComponent(relativePath).path
-            if FileManager.default.fileExists(atPath: absolute) {
-                appendFile(relativePath: relativePath)
-            }
-        }
-
-        if let enumerator = FileManager.default.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) {
-            for case let url as URL in enumerator {
-                let path = url.path
-                guard relativeFilePaths.count < 1_000 else { break }
-                if shouldSkipProjectTreePath(path) {
-                    enumerator.skipDescendants()
-                    continue
-                }
-                guard shouldShowSourcePath(path), let relative = relativePath(for: path, rootPath: rootPath) else {
-                    continue
-                }
-                appendFile(relativePath: relative)
-            }
-        }
-
-        return makeProjectFileTree(from: relativeFilePaths)
-    }
-
-    private func makeProjectFileTree(from relativeFilePaths: [String]) -> [ProjectFileItem] {
-        var directoryPaths = Set<String>()
-        let filePaths = Set(relativeFilePaths)
-
-        for relativePath in relativeFilePaths {
-            directoryPaths.formUnion(ancestorFolderPaths(for: relativePath))
-        }
-
-        let allPaths = Array(directoryPaths.union(filePaths)).sorted {
-            projectTreeSort($0, before: $1, directoryPaths: directoryPaths)
-        }
-
-        return allPaths.map { relativePath in
-            fileItem(
-                relativePath: relativePath,
-                selected: !directoryPaths.contains(relativePath) && isKeyProjectFile(relativePath),
-                isDirectory: directoryPaths.contains(relativePath)
-            )
-        }
-    }
-
-    private func isVisibleInCollapsedFileTree(_ item: ProjectFileItem) -> Bool {
-        guard item.depth > 0 else { return true }
-        return ancestorFolderPaths(for: item.path).allSatisfy { expandedProjectFolderPaths.contains($0) }
-    }
-
-    private func ancestorFolderPaths(for relativePath: String) -> [String] {
-        let parts = relativePath.split(separator: "/").map(String.init)
-        guard parts.count > 1 else { return [] }
-        return (1..<parts.count).map { count in
-            parts.prefix(count).joined(separator: "/")
-        }
-    }
-
-    private func isDescendant(_ path: String, of folderPath: String) -> Bool {
-        path.hasPrefix(folderPath + "/")
-    }
-
-    private func projectTreeSort(_ lhs: String, before rhs: String, directoryPaths: Set<String>) -> Bool {
-        let leftParts = lhs.split(separator: "/").map(String.init)
-        let rightParts = rhs.split(separator: "/").map(String.init)
-        let sharedCount = min(leftParts.count, rightParts.count)
-
-        for index in 0..<sharedCount where leftParts[index] != rightParts[index] {
-            let leftPath = leftParts.prefix(index + 1).joined(separator: "/")
-            let rightPath = rightParts.prefix(index + 1).joined(separator: "/")
-            let leftIsDirectory = directoryPaths.contains(leftPath)
-            let rightIsDirectory = directoryPaths.contains(rightPath)
-            if leftIsDirectory != rightIsDirectory {
-                return leftIsDirectory
-            }
-            return leftParts[index].localizedStandardCompare(rightParts[index]) == .orderedAscending
-        }
-
-        return leftParts.count < rightParts.count
-    }
-
-    private func shouldShowSourcePath(_ path: String) -> Bool {
-        let lower = path.lowercased()
-        guard lower.hasSuffix(".kt") || lower.hasSuffix(".java") || lower.hasSuffix(".xml") else {
-            return false
-        }
-        return !lower.contains("/build/") && !lower.contains("/generated/")
-    }
-
-    private func shouldSkipProjectTreePath(_ path: String) -> Bool {
-        let lower = path.lowercased()
-        return lower.contains("/.gradle/")
-            || lower.contains("/.idea/")
-            || lower.contains("/build/")
-            || lower.contains("/generated/")
-            || lower.contains("/.git/")
-    }
-
-    private func relativePath(for path: String, rootPath: String) -> String? {
-        guard path.hasPrefix(rootPath) else {
-            return nil
-        }
-        return String(path.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    }
-
-    private func fileItem(relativePath: String, selected: Bool, isDirectory: Bool) -> ProjectFileItem {
-        let parts = relativePath.split(separator: "/").map(String.init)
-        let name = parts.last ?? relativePath
-        let depth = max(0, parts.count - 1)
-        return ProjectFileItem(
-            path: relativePath,
-            name: name,
-            depth: depth,
-            symbol: isDirectory ? "folder" : symbol(for: name),
-            isSelected: selected,
-            isDirectory: isDirectory
-        )
-    }
-
-    private func isKeyProjectFile(_ relativePath: String) -> Bool {
-        let lower = relativePath.lowercased()
-        return lower.contains("build.gradle")
-            || lower.contains("androidmanifest.xml")
-            || lower.contains("mainactivity")
-            || lower.contains("/res/layout/")
-    }
-
     private func displayPath(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         if path.hasPrefix(home) {
@@ -2989,23 +4168,6 @@ final class AgentViewModel: ObservableObject {
         }
         return "Git repository not found"
     }
-
-    private func symbol(for fileName: String) -> String {
-        if fileName.hasSuffix(".gradle") || fileName.hasSuffix(".kts") || fileName == "libs.versions.toml" {
-            return "hammer"
-        }
-        if fileName == "AndroidManifest.xml" {
-            return "doc.badge.gearshape"
-        }
-        if fileName.hasSuffix(".kt") || fileName.hasSuffix(".java") {
-            return "curlybraces"
-        }
-        if fileName.hasSuffix(".xml") {
-            return "doc.richtext"
-        }
-        return "doc"
-    }
-
 }
 
 @MainActor
@@ -3093,11 +4255,37 @@ extension AgentViewModel {
         loaded.lastWirelessPairingAddress = "192.168.1.10:37099"
         loaded.wirelessConnectAddress = "192.168.1.10:42177"
         loaded.lastWirelessDeviceAddress = "192.168.1.10:42177"
+        loaded.wirelessDebuggingDevices = [
+            WirelessDebuggingDevice(
+                id: "192.168.1.10",
+                serviceName: "Pixel 8",
+                host: "192.168.1.10",
+                connectAddress: "192.168.1.10:42177",
+                pairingAddress: "192.168.1.10:37099"
+            )
+        ]
+        loaded.selectedWirelessDebuggingDeviceID = "192.168.1.10"
         loaded.wirelessDebuggingStatus = "Wireless fixture ready."
+        _ = loaded.selectedWirelessDebuggingDevice
+        _ = loaded.hasSelectedWirelessDebuggingDevice
+        _ = loaded.canRefreshWirelessDebuggingDevices
+        _ = loaded.wirelessDiscoveryHelpText
         _ = loaded.canPairWirelessDevice
         _ = loaded.canConnectWirelessDevice
         _ = loaded.canDisconnectWirelessDevice
         _ = loaded.wirelessDebuggingSummary
+        let selectedWirelessOnly = makeLoadedCoverageModel(rootPath: tempProject.path)
+        selectedWirelessOnly.applyDeviceOutput(
+            """
+            List of devices attached
+            192.168.1.11:42177 device product:wifi model:Pixel_9 device:komodo transport_id:3
+            """
+        )
+        selectedWirelessOnly.selectedDeviceID = "192.168.1.11:42177"
+        selectedWirelessOnly.wirelessConnectAddress = ""
+        selectedWirelessOnly.lastWirelessDeviceAddress = ""
+        _ = selectedWirelessOnly.canDisconnectSelectedWirelessDevice
+        _ = selectedWirelessOnly.wirelessDisconnectHelpText
         loaded.lastCommandSummary = loaded.summarizeCommandResult(
             CommandResult(
                 command: ToolCommand(title: "Run Unit Tests", executable: "/bin/echo", arguments: ["ok"], workingDirectory: tempProject.path),
@@ -3228,6 +4416,10 @@ extension AgentViewModel {
             _ = fixture.canScanProject
             _ = fixture.canRunTools
             _ = fixture.canRefreshDevices
+            _ = fixture.selectedWirelessDebuggingDevice
+            _ = fixture.hasSelectedWirelessDebuggingDevice
+            _ = fixture.canRefreshWirelessDebuggingDevices
+            _ = fixture.wirelessDiscoveryHelpText
             _ = fixture.canPairWirelessDevice
             _ = fixture.canConnectWirelessDevice
             _ = fixture.canDisconnectWirelessDevice
@@ -3261,6 +4453,349 @@ extension AgentViewModel {
             touched += 25
         }
         return touched
+    }
+
+    static func wirelessDisconnectCoverageDiagnostics() -> [String: String] {
+        let tempProject = makeCoverageProject()
+        let model = makeLoadedCoverageModel(rootPath: tempProject.path)
+        model.applyDeviceOutput(
+            """
+            List of devices attached
+            adb-RSVSS469IBLBPVJZ-fJ2LPO._adb-tls-connect._tcp device product:wifi model:RMX3998 device:RE5C94L1 transport_id:3
+            """
+        )
+        model.selectedDeviceID = "adb-RSVSS469IBLBPVJZ-fJ2LPO._adb-tls-connect._tcp"
+        model.wirelessConnectAddress = "192.168.1.99:49999"
+        model.lastWirelessDeviceAddress = "192.168.1.98:48888"
+        model.wirelessDebuggingDevices = [
+            WirelessDebuggingDevice(
+                id: "192.168.225.46",
+                serviceName: "adb-RSVSS469IBLBPVJZ-fJ2LPO",
+                host: "192.168.225.46",
+                connectAddress: "192.168.225.46:42783",
+                pairingAddress: nil
+            )
+        ]
+
+        return [
+            "canDisconnect": "\(model.canDisconnectWirelessDevice)",
+            "canDisconnectSelected": "\(model.canDisconnectSelectedWirelessDevice)",
+            "disconnectHelp": model.wirelessDisconnectHelpText
+        ]
+    }
+
+    static func deviceTestStopCoverageDiagnostics() -> [String: String] {
+        let tempProject = makeCoverageProject()
+        let model = makeLoadedCoverageModel(rootPath: tempProject.path)
+        let output = """
+        instrumentation:com.example.coverage.debug.test/androidx.test.runner.AndroidJUnitRunner (target=com.example.coverage.debug)
+        instrumentation:com.other.app.test/androidx.test.runner.AndroidJUnitRunner (target=com.other.app)
+        """
+        let packages = model.orderedUniquePackages(
+            model.defaultDeviceTestStopPackages(for: "com.example.coverage")
+                + model.instrumentationStopPackages(in: output, basePackageName: "com.example.coverage")
+        )
+
+        return [
+            "packages": packages.joined(separator: ",")
+        ]
+    }
+
+    static func editorSaveSafetyCoverageDiagnostics() -> [String: String] {
+        let tempProject = makeCoverageProject()
+        let model = makeLoadedCoverageModel(rootPath: tempProject.path)
+        let manifestItem = ProjectFileItem(
+            path: "app/src/main/AndroidManifest.xml",
+            name: "AndroidManifest.xml",
+            depth: 3,
+            symbol: "doc.badge.gearshape",
+            isSelected: true
+        )
+        let manifestURL = tempProject.appendingPathComponent(manifestItem.path)
+        let originalManifest = (try? String(contentsOf: manifestURL, encoding: .utf8)) ?? ""
+
+        model.openFile(manifestItem)
+        model.updateSelectedEditorContent(
+            model.selectedEditorContent.replacingOccurrences(
+                of: "</manifest>",
+                with: "    <!-- save safety coverage -->\n</manifest>"
+            )
+        )
+        let pendingDiff = model.diffPreviewLines.joined(separator: "\n")
+        model.saveSelectedEditorDocument()
+
+        let savedManifest = (try? String(contentsOf: manifestURL, encoding: .utf8)) ?? ""
+        let safeStatus = model.lastEditorSaveSafetySummary
+        let safeRows = model.safetyRows.map { "\($0.title): \($0.detail)" }.joined(separator: "\n")
+        let checkpointContent = model.lastEditorUndoCheckpointPath.isEmpty
+            ? ""
+            : ((try? String(contentsOfFile: model.lastEditorUndoCheckpointPath, encoding: .utf8)) ?? "")
+
+        let secretURL = tempProject.appendingPathComponent("app/src/main/java/com/example/coverage/Secrets.kt")
+        try? "package com.example.coverage\nobject Secrets {}\n".write(to: secretURL, atomically: true, encoding: .utf8)
+        let secretItem = ProjectFileItem(
+            path: "app/src/main/java/com/example/coverage/Secrets.kt",
+            name: "Secrets.kt",
+            depth: 5,
+            symbol: "curlybraces",
+            isSelected: true
+        )
+
+        model.openFile(secretItem)
+        model.updateSelectedEditorContent("package com.example.coverage\nconst val API_KEY = \"sk-live-secret\"\n")
+        model.saveSelectedEditorDocument()
+        let blockedSecretContent = (try? String(contentsOf: secretURL, encoding: .utf8)) ?? ""
+        let blockedDiff = model.diffPreviewLines.joined(separator: "\n")
+
+        return [
+            "safeFileUpdated": "\(savedManifest.contains("save safety coverage"))",
+            "pendingDiffWasScoped": "\(pendingDiff.contains(manifestItem.path) && pendingDiff.contains("save safety coverage"))",
+            "checkpointExists": "\(FileManager.default.fileExists(atPath: model.lastEditorUndoCheckpointPath))",
+            "checkpointMatchesOriginal": "\(checkpointContent == originalManifest)",
+            "safeStatus": safeStatus,
+            "safeRows": safeRows,
+            "secretBlocked": "\(model.lastStatusMessage.contains("Save blocked"))",
+            "secretFileUnchanged": "\(blockedSecretContent.contains("object Secrets") && !blockedSecretContent.contains("sk-live-secret"))",
+            "secretSummary": model.lastEditorSecretScanSummary,
+            "secretDiffRedacted": "\(blockedDiff.contains("[REDACTED"))"
+        ]
+    }
+
+    static func assistantPrivacyCoverageDiagnostics() -> [String: String] {
+        let tempProject = makeCoverageProject()
+        let model = makeLoadedCoverageModel(rootPath: tempProject.path)
+        let previousConsent = UserDefaults.standard.object(forKey: model.assistantProviderSharingConsentKey)
+        let previousMode = UserDefaults.standard.object(forKey: model.assistantModelModeKey)
+        defer {
+            if let previousConsent {
+                UserDefaults.standard.set(previousConsent, forKey: model.assistantProviderSharingConsentKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: model.assistantProviderSharingConsentKey)
+            }
+            if let previousMode {
+                UserDefaults.standard.set(previousMode, forKey: model.assistantModelModeKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: model.assistantModelModeKey)
+            }
+        }
+        model.assistantAllowsProviderSharing = false
+        model.assistantModelMode = .automatic
+        model.prompt = "Give me a repo overview around 100 words."
+        model.profile = ProjectProfile.from(snapshot: model.snapshot)
+        model.plan = model.agent.createPlan(request: model.prompt, profile: model.profile, snapshot: model.snapshot)
+        model.lastStandardOutput = "assembleDebug privacy probe output\n"
+
+        let lower = model.plan.originalRequest.lowercased()
+        let privateSharingAllowed = model.assistantProviderPayloadSharingAllowed(allowRemoteModels: true)
+        let privateRequest = model.makeAssistantModelRequest(for: lower, sharingAllowed: privateSharingAllowed)
+        let privateDisclosure = model.assistantPrivacyDisclosure
+        let privatePayloadSummary = model.assistantPayloadPrivacySummary
+
+        model.assistantAllowsProviderSharing = true
+        let sharedSharingAllowed = model.assistantProviderPayloadSharingAllowed(allowRemoteModels: true)
+        let sharedRequest = model.makeAssistantModelRequest(for: lower, sharingAllowed: sharedSharingAllowed)
+        let sharedDisclosure = model.assistantPrivacyDisclosure
+
+        model.assistantModelMode = .privateLocal
+        let privateModeSharingAllowed = model.assistantProviderPayloadSharingAllowed(allowRemoteModels: true)
+
+        return [
+            "defaultSharingAllowed": "\(privateSharingAllowed)",
+            "defaultContextCount": "\(privateRequest.contextFiles.count)",
+            "defaultCommandOutputNil": "\(privateRequest.recentCommandOutput == nil)",
+            "defaultDisclosure": privateDisclosure,
+            "defaultPayloadSummary": privatePayloadSummary,
+            "sharedSharingAllowed": "\(sharedSharingAllowed)",
+            "sharedContextCount": "\(sharedRequest.contextFiles.count)",
+            "sharedCommandOutputPresent": "\(sharedRequest.recentCommandOutput?.contains("privacy probe") == true)",
+            "sharedDisclosure": sharedDisclosure,
+            "accountSummary": model.assistantProviderAccountSummary,
+            "privateModeOverridesSharing": "\(!privateModeSharingAllowed)"
+        ]
+    }
+
+    static func assistantModelSetupCoverageDiagnostics() -> [String: String] {
+        let model = AgentViewModel()
+        let defaults = UserDefaults.standard
+        let keys = [
+            model.assistantTaskDroidBaseURLKey,
+            model.assistantTaskDroidTimeoutKey,
+            model.assistantPrefersTaskDroidKey
+        ]
+        let previousValues = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+        defer {
+            for key in keys {
+                if let value = previousValues[key] ?? nil {
+                    defaults.set(value, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+        }
+
+        keys.forEach(defaults.removeObject(forKey:))
+        model.assistantPrefersTaskDroid = false
+        model.assistantTaskDroidBaseURLText = ""
+        let defaultSummary = model.assistantModelSetupSummary
+        let defaultURL = model.assistantTaskDroidBaseURL?.absoluteString ?? "nil"
+        let defaultEnabled = model.assistantTaskDroidEnabled
+
+        model.assistantPrefersTaskDroid = true
+        model.assistantTaskDroidBaseURLText = "https://planner.example.com"
+        model.assistantTaskDroidTimeoutText = "42"
+
+        return [
+            "defaultSummary": defaultSummary,
+            "defaultURL": defaultURL,
+            "defaultEnabled": "\(defaultEnabled)",
+            "configuredURL": model.assistantTaskDroidBaseURL?.absoluteString ?? "nil",
+            "configuredEnabled": "\(model.assistantTaskDroidEnabled)",
+            "configuredTimeout": "\(Int(model.assistantTaskDroidTimeoutSeconds ?? 0))",
+            "configuredSummary": model.assistantModelSetupSummary,
+            "accountSummary": model.assistantProviderAccountSummary
+        ]
+    }
+
+    static func launchReadinessCoverageDiagnostics() async -> [String: String] {
+        let defaults = UserDefaults.standard
+        let keys = [
+            AndroidDevAgentLaunchReadiness.telemetryModeKey,
+            AndroidDevAgentLaunchReadiness.onboardingCompletedKey,
+            AndroidDevAgentLaunchReadiness.licenseStateKey,
+            AndroidDevAgentLaunchReadiness.licenseMaskedKey,
+            AndroidDevAgentLaunchReadiness.licenseActivatedAtKey,
+            AndroidDevAgentLaunchReadiness.licenseSnapshotKey,
+            AndroidDevAgentLaunchReadiness.licenseDeviceIDKey,
+            AndroidDevAgentLaunchReadiness.latestSupportBundlePathKey,
+            AndroidDevAgentLaunchReadiness.latestSupportIssueIDKey,
+            AndroidDevAgentLaunchReadiness.latestSupportUploadStatusKey,
+            AndroidDevAgentLaunchReadiness.releaseNotesPathKey,
+            AndroidDevAgentLaunchReadiness.crashUploadConsentKey,
+            AndroidDevAgentLaunchReadiness.supportUploadConsentKey
+        ]
+        let previousValues = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
+        defer {
+            for key in keys {
+                if let value = previousValues[key] ?? nil {
+                    defaults.set(value, forKey: key)
+                } else {
+                    defaults.removeObject(forKey: key)
+                }
+            }
+        }
+
+        keys.forEach(defaults.removeObject(forKey:))
+        let tempProject = makeCoverageProject()
+        let model = makeLoadedCoverageModel(rootPath: tempProject.path)
+        let defaultRows = model.launchReadinessRows.map(\.title).joined(separator: "|")
+        let defaultTelemetry = AndroidDevAgentLaunchReadiness.telemetrySummary
+        let defaultLicenseSummary = AndroidDevAgentLaunchReadiness.licenseSummary
+
+        defaults.set(AndroidDevAgentTelemetryMode.diagnosticsOnly.rawValue, forKey: AndroidDevAgentLaunchReadiness.telemetryModeKey)
+        AndroidDevAgentLaunchReadiness.recordTelemetryEvent("coverage_launch_readiness")
+        let invalidLicense = await AndroidDevAgentLaunchReadiness.activateLicense("bad-key", accountEmail: "launch@example.com")
+        let missingAccount = await AndroidDevAgentLaunchReadiness.activateLicense("ADA-ABCD-EFGH-IJKL-MNOP", accountEmail: "")
+        let activationDiagnostics = await AndroidDevAgentLaunchReadiness.withCoverageLicenseBackend {
+            let message = await AndroidDevAgentLaunchReadiness.activateLicense("ADA-ABCD-EFGH-IJKL-MNOP", accountEmail: "launch@example.com")
+            return [
+                "message": message,
+                "summary": AndroidDevAgentLaunchReadiness.licenseSummary
+            ]
+        }
+        let validLicense = activationDiagnostics["message"] ?? ""
+        let activeLicenseSummary = activationDiagnostics["summary"] ?? ""
+        let refreshedLicense = await AndroidDevAgentLaunchReadiness.withCoverageLicenseBackend {
+            await AndroidDevAgentLaunchReadiness.refreshLicenseEntitlement()
+        }
+        let offlineGrace = await AndroidDevAgentLaunchReadiness.withCoverageLicenseBackend(failingRefresh: true) {
+            await AndroidDevAgentLaunchReadiness.refreshLicenseEntitlement()
+        }
+        let recoveredAccount = await AndroidDevAgentLaunchReadiness.withCoverageLicenseBackend {
+            await AndroidDevAgentLaunchReadiness.recoverLicenseAccount("launch@example.com")
+        }
+        let transferredLicense = await AndroidDevAgentLaunchReadiness.withCoverageLicenseBackend {
+            await AndroidDevAgentLaunchReadiness.transferLicense(to: "new-owner@example.com")
+        }
+        let transferSummary = AndroidDevAgentLaunchReadiness.licenseSummary
+        AndroidDevAgentLaunchReadiness.markOnboardingCompleted()
+
+        let releaseNotesURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("android-dev-agent-coverage-release-notes.md")
+        try? "Coverage release notes\n".write(to: releaseNotesURL, atomically: true, encoding: .utf8)
+        defaults.set(releaseNotesURL.path, forKey: AndroidDevAgentLaunchReadiness.releaseNotesPathKey)
+
+        model.commandOutput = """
+        Authorization: Bearer launch-secret-token
+        OPENAI_API_KEY=sk-test-secret-value
+        harmless console line
+        """
+        model.createSupportBundle()
+        let supportBundlePath = model.supportBundlePath
+        let supportReportURL = URL(fileURLWithPath: supportBundlePath).appendingPathComponent("support-report.txt")
+        let supportReportText = (try? String(contentsOf: supportReportURL, encoding: .utf8)) ?? ""
+        let supportReportExists = FileManager.default.fileExists(atPath: supportReportURL.path)
+        let launchReadinessManifestExists = FileManager.default.fileExists(
+            atPath: URL(fileURLWithPath: supportBundlePath)
+                .appendingPathComponent("launch-readiness.txt")
+                .path
+        )
+        let releaseNotesCopied = FileManager.default.fileExists(
+            atPath: URL(fileURLWithPath: supportBundlePath)
+                .appendingPathComponent("release-notes.md")
+                .path
+        )
+        let privacyAuditCopied = FileManager.default.fileExists(
+            atPath: URL(fileURLWithPath: supportBundlePath)
+                .appendingPathComponent("privacy-audit.jsonl")
+                .path
+        )
+        let issueIDURL = URL(fileURLWithPath: supportBundlePath).appendingPathComponent("issue-id.txt")
+        let diagnosticVersionURL = URL(fileURLWithPath: supportBundlePath).appendingPathComponent("diagnostic-version.txt")
+        let redactionSummaryURL = URL(fileURLWithPath: supportBundlePath).appendingPathComponent("redaction-summary.txt")
+        let symbolicationURL = URL(fileURLWithPath: supportBundlePath).appendingPathComponent("crash-symbolication.txt")
+        let issueIDText = (try? String(contentsOf: issueIDURL, encoding: .utf8)) ?? ""
+        let diagnosticVersionText = (try? String(contentsOf: diagnosticVersionURL, encoding: .utf8)) ?? ""
+        let symbolicationText = (try? String(contentsOf: symbolicationURL, encoding: .utf8)) ?? ""
+        let supportReportRedacted = supportReportText.contains("[REDACTED]")
+            && !supportReportText.contains("launch-secret-token")
+            && !supportReportText.contains("sk-test-secret-value")
+        AndroidDevAgentLaunchReadiness.setSupportUploadConsent(true)
+        let supportUploadStatus = await AndroidDevAgentLaunchReadiness.withCoverageSupportBackend {
+            await AndroidDevAgentLaunchReadiness.uploadSupportBundle(at: URL(fileURLWithPath: supportBundlePath))
+        }
+
+        return [
+            "rows": defaultRows,
+            "defaultTelemetry": defaultTelemetry,
+            "defaultLicenseSummary": defaultLicenseSummary,
+            "invalidLicense": invalidLicense,
+            "missingAccount": missingAccount,
+            "validLicense": validLicense,
+            "activeLicenseSummary": activeLicenseSummary,
+            "refreshedLicense": refreshedLicense,
+            "offlineGrace": offlineGrace,
+            "recoveredAccount": recoveredAccount,
+            "transferredLicense": transferredLicense,
+            "transferSummary": transferSummary,
+            "licenseSummary": AndroidDevAgentLaunchReadiness.licenseSummary,
+            "onboardingSummary": AndroidDevAgentLaunchReadiness.onboardingSummary,
+            "releaseNotesSummary": AndroidDevAgentLaunchReadiness.releaseNotesSummary,
+            "supportBundlePath": supportBundlePath,
+            "supportReportExists": "\(supportReportExists)",
+            "supportReportRedacted": "\(supportReportRedacted)",
+            "privacyAuditCopied": "\(privacyAuditCopied)",
+            "launchManifestExists": "\(launchReadinessManifestExists)",
+            "releaseNotesCopied": "\(releaseNotesCopied)",
+            "issueIDExists": "\(FileManager.default.fileExists(atPath: issueIDURL.path))",
+            "issueIDStamped": "\(issueIDText.contains("ADA-"))",
+            "diagnosticVersionExists": "\(FileManager.default.fileExists(atPath: diagnosticVersionURL.path))",
+            "diagnosticVersionStamped": "\(diagnosticVersionText.contains("Diagnostic Schema") && diagnosticVersionText.contains("App Version"))",
+            "redactionSummaryExists": "\(FileManager.default.fileExists(atPath: redactionSummaryURL.path))",
+            "symbolicationExists": "\(FileManager.default.fileExists(atPath: symbolicationURL.path))",
+            "symbolicationStamped": "\(symbolicationText.contains("Crash Symbolication") && symbolicationText.contains("dSYM UUID"))",
+            "supportUploadStatus": supportUploadStatus,
+            "supportStatus": model.lastStatusMessage
+        ]
     }
 
     private static func makeLoadedCoverageModel(rootPath: String) -> AgentViewModel {
@@ -3360,12 +4895,5 @@ extension AgentViewModel {
         } else {
             defaults.removeObject(forKey: key)
         }
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
     }
 }

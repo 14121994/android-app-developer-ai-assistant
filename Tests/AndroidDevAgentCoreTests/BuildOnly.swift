@@ -1,0 +1,1 @@
+let androidDevAgentCoreTestsTargetIsPresent = true

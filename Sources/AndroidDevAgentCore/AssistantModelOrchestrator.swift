@@ -104,11 +104,11 @@ public extension AssistantModelMode {
         case .privateLocal:
             return [
                 AssistantBoundModelInfo(
-                    provider: .taskDroid,
-                    modelID: "taskdroid-android-planner-v1",
-                    displayName: "TaskDroid Android Planner",
+                    provider: .local,
+                    modelID: "gpt-oss-20b-local-fallback",
+                    displayName: "Private Local Fallback",
                     route: "All Private prompts",
-                    purpose: "high local Android implementation task planning through the private TaskDroid route"
+                    purpose: "offline/private Android guidance using local project signals without provider payload sharing"
                 )
             ]
         }
@@ -221,7 +221,9 @@ public struct AssistantOrchestrationConfig: Sendable {
     private static var defaultTaskDroidBaseURL: URL? {
         let environment = ProcessInfo.processInfo.environment
         let configured = environment["TASKDROID_API_BASE_URL"] ?? environment["TASKDROID_URL"]
-        let value = configured?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "http://127.0.0.1:8000"
+        guard let value = configured?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+            return nil
+        }
         return URL(string: value)
     }
 
@@ -351,7 +353,7 @@ public final class AssistantModelOrchestrator: Sendable {
             }
         }
 
-        let fallbackSpec = config.mode == .privateLocal
+        let fallbackSpec = !config.allowRemoteModels || config.mode == .privateLocal
             ? Self.privateLocalSpec
             : spec
         let response = LocalAndroidAssistantResponder.answer(request: request, contextFiles: rankedFiles, routedModel: fallbackSpec)

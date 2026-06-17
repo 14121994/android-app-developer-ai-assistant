@@ -3,113 +3,37 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private let agentWorkbenchVisiblePanelsKey = "AndroidDevAgentVisiblePanels"
-
-private enum ToolWindowSide: Equatable {
-    case left
-    case right
-}
-
-private enum ToolWindowPanel: String, CaseIterable, Hashable, Identifiable {
-    case workspace
-    case androidTarget
-    case runTools
-    case files
-    case projectIntelligence
-    case editor
-    case askAssistant
-    case commandConsole
-    case session
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .workspace: return "Workspace"
-        case .androidTarget: return "Android Target"
-        case .runTools: return "Run Tools"
-        case .files: return "Files"
-        case .projectIntelligence: return "Project Intelligence"
-        case .editor: return "Editor"
-        case .askAssistant: return "Ask The Assistant"
-        case .commandConsole: return "Command Console"
-        case .session: return "Session"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .workspace: return "folder"
-        case .androidTarget: return "slider.horizontal.3"
-        case .runTools: return "wrench.and.screwdriver"
-        case .files: return "list.bullet.rectangle"
-        case .projectIntelligence: return "brain.head.profile"
-        case .editor: return "curlybraces.square"
-        case .askAssistant: return "text.bubble"
-        case .commandConsole: return "terminal"
-        case .session: return "rectangle.rightthird.inset.filled"
-        }
-    }
-
-    var shortTitle: String {
-        switch self {
-        case .workspace: return "Workspace"
-        case .androidTarget: return "Target"
-        case .runTools: return "Tools"
-        case .files: return "Files"
-        case .projectIntelligence: return "Insights"
-        case .editor: return "Editor"
-        case .askAssistant: return "Ask"
-        case .commandConsole: return "Console"
-        case .session: return "Session"
-        }
-    }
-
-    var shortcut: KeyEquivalent {
-        switch self {
-        case .workspace: return "1"
-        case .androidTarget: return "2"
-        case .runTools: return "3"
-        case .files: return "4"
-        case .projectIntelligence: return "5"
-        case .askAssistant: return "6"
-        case .commandConsole: return "7"
-        case .session: return "8"
-        case .editor: return "9"
-        }
-    }
-
-    var shortcutHint: String {
-        switch self {
-        case .workspace: return "Cmd-Option-1"
-        case .androidTarget: return "Cmd-Option-2"
-        case .runTools: return "Cmd-Option-3"
-        case .files: return "Cmd-Option-4"
-        case .projectIntelligence: return "Cmd-Option-5"
-        case .askAssistant: return "Cmd-Option-6"
-        case .commandConsole: return "Cmd-Option-7"
-        case .session: return "Cmd-Option-8"
-        case .editor: return "Cmd-Option-9"
-        }
-    }
-
-    static let leftPanels: [ToolWindowPanel] = [.workspace, .androidTarget, .runTools, .files]
-    static let rightPanels: [ToolWindowPanel] = [.projectIntelligence, .askAssistant, .commandConsole, .session]
-    static let defaultVisible = Set<ToolWindowPanel>()
-    static let starterVisible: Set<ToolWindowPanel> = [.workspace, .askAssistant, .session]
-}
-
 public struct AgentWorkbenchView: View {
     @StateObject private var viewModel = AgentViewModel()
     @State private var visiblePanels: Set<ToolWindowPanel>
+    @State private var isSettingsPresented = false
+    @State private var leftFeaturePaneMounted: Bool
+    @State private var rightFeaturePaneMounted: Bool
+    @State private var leftFeaturePaneTransitionGeneration = 0
+    @State private var rightFeaturePaneTransitionGeneration = 0
+    @State private var allowsPaneEntranceAnimation = false
+    @AppStorage(agentWorkbenchColorSchemeKey) private var colorSchemePreferenceRaw = WorkbenchColorSchemePreference.system.rawValue
+    @AppStorage(agentWorkbenchAccentThemeKey) private var accentThemeRaw = WorkbenchAccentTheme.pacific.rawValue
+    @AppStorage(agentWorkbenchSurfaceStyleKey) private var surfaceStyleRaw = WorkbenchSurfaceStyle.balanced.rawValue
+    @AppStorage(agentWorkbenchTextureEnabledKey) private var textureEnabled = true
+    @AppStorage(agentWorkbenchMotionStyleKey) private var motionStyleRaw = WorkbenchMotionStyle.native.rawValue
+    @AppStorage(agentWorkbenchPanelMotionEnabledKey) private var panelMotionEnabled = true
+    @AppStorage(agentWorkbenchSelectionMotionEnabledKey) private var selectionMotionEnabled = true
+    @AppStorage(agentWorkbenchStateMotionEnabledKey) private var stateMotionEnabled = true
+    @AppStorage(agentWorkbenchStatusPulseEnabledKey) private var statusPulseEnabled = true
+    @AppStorage(agentWorkbenchEntranceMotionEnabledKey) private var entranceMotionEnabled = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init() {
-        _visiblePanels = State(initialValue: Self.loadVisiblePanels())
+        let initialPanels = Self.loadVisiblePanels()
+        _visiblePanels = State(initialValue: initialPanels)
+        _leftFeaturePaneMounted = State(initialValue: Self.showsLeftFeaturePane(in: initialPanels))
+        _rightFeaturePaneMounted = State(initialValue: Self.showsRightFeaturePane(in: initialPanels))
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            ShellTitleBar(viewModel: viewModel)
+            ShellTitleBar(viewModel: viewModel, isSettingsPresented: $isSettingsPresented)
             Divider()
             HStack(spacing: 0) {
                 ToolWindowRail(
@@ -119,20 +43,36 @@ public struct AgentWorkbenchView: View {
                 )
                 Divider()
                 HSplitView {
-                    if showsLeftFeaturePane {
-                        WorkspaceSidebarPane(viewModel: viewModel, visiblePanels: $visiblePanels)
-                            .frame(minWidth: 260, idealWidth: 340, maxWidth: 480)
+                    if leftFeaturePaneMounted {
+                        SlidingFeaturePane(
+                            isPresented: showsLeftFeaturePane,
+                            edge: .leading,
+                            animateOnAppear: allowsPaneEntranceAnimation
+                        ) {
+                            WorkspaceSidebarPane(viewModel: viewModel, visiblePanels: $visiblePanels)
+                        }
+                        .frame(minWidth: 220, idealWidth: 320, maxWidth: 460)
+                        .transition(WorkbenchMotion.panelTransition(edge: .leading, reduceMotion: reduceMotion, settings: motionSettings))
                     }
                     if visiblePanels.contains(.editor) {
                         CenterEditorWorkspace(viewModel: viewModel, visiblePanels: $visiblePanels)
-                            .frame(minWidth: 380, idealWidth: 760, maxWidth: .infinity)
+                            .frame(minWidth: 300, idealWidth: 760, maxWidth: .infinity)
+                            .transition(WorkbenchMotion.quietTransition(reduceMotion, settings: motionSettings))
                     } else {
                         EmptyToolWindowCanvas(viewModel: viewModel, visiblePanels: $visiblePanels)
-                            .frame(minWidth: 360, idealWidth: 560, maxWidth: .infinity)
+                            .frame(minWidth: 280, idealWidth: 560, maxWidth: .infinity)
+                            .transition(WorkbenchMotion.quietTransition(reduceMotion, settings: motionSettings))
                     }
-                    if showsRightFeaturePane {
-                        RightToolDockPane(viewModel: viewModel, visiblePanels: $visiblePanels)
-                            .frame(minWidth: 320, idealWidth: 430, maxWidth: 560)
+                    if rightFeaturePaneMounted {
+                        SlidingFeaturePane(
+                            isPresented: showsRightFeaturePane,
+                            edge: .trailing,
+                            animateOnAppear: allowsPaneEntranceAnimation
+                        ) {
+                            RightToolDockPane(viewModel: viewModel, visiblePanels: $visiblePanels)
+                        }
+                        .frame(minWidth: 280, idealWidth: 420, maxWidth: 560)
+                        .transition(WorkbenchMotion.panelTransition(edge: .trailing, reduceMotion: reduceMotion, settings: motionSettings))
                     }
                 }
                 Divider()
@@ -143,15 +83,40 @@ public struct AgentWorkbenchView: View {
                 )
             }
         }
-        .frame(minWidth: 1120, idealWidth: 1280, minHeight: 700, idealHeight: 820)
-        .background(Palette.appBackground)
-        .colorScheme(.light)
+        .frame(minWidth: 980, idealWidth: 1280, minHeight: 640, idealHeight: 820)
+        .background {
+            WorkbenchBackdrop()
+        }
+        .environment(\.workbenchThemeSettings, themeSettings)
+        .environment(\.workbenchMotionSettings, motionSettings)
+        .preferredColorScheme(themeSettings.preferredColorScheme)
+        .tint(themeSettings.accentColor)
+        .accentColor(themeSettings.accentColor)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Android Dev Agent workspace")
         .accessibilityIdentifier("Android Dev Agent workspace shell")
+        .animation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings), value: visiblePanels)
+        .onAppear {
+            reconcileFeaturePaneMounts()
+            allowsPaneEntranceAnimation = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AndroidDevAgentNotifications.openAgentSettings)) { _ in
+            isSettingsPresented = true
+        }
+        .onChange(of: showsLeftFeaturePane) { _, isPresented in
+            updateLeftFeaturePaneMount(isPresented: isPresented)
+        }
+        .onChange(of: showsRightFeaturePane) { _, isPresented in
+            updateRightFeaturePaneMount(isPresented: isPresented)
+        }
+        .onChange(of: panelMotionActive) { _, _ in
+            reconcileFeaturePaneMounts()
+        }
         .onChange(of: viewModel.filePanelRevealGeneration) { _, generation in
             if generation > 0 {
-                visiblePanels.insert(.files)
+                withAnimation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings)) {
+                    _ = visiblePanels.insert(.files)
+                }
             }
         }
         .onChange(of: visiblePanels) { _, panels in
@@ -170,19 +135,73 @@ public struct AgentWorkbenchView: View {
             }
             return true
         }
-        .alert(item: $viewModel.pendingConfirmation) { confirmation in
-            Alert(
-                title: Text("Run \(confirmation.kind.rawValue)?"),
+        .alert(item: activeAlertBinding, content: alertContent)
+    }
+
+    private var themeSettings: WorkbenchThemeSettings {
+        WorkbenchThemeSettings(
+            colorSchemePreference: WorkbenchColorSchemePreference(rawValue: colorSchemePreferenceRaw) ?? .system,
+            accentTheme: WorkbenchAccentTheme(rawValue: accentThemeRaw) ?? .pacific,
+            surfaceStyle: WorkbenchSurfaceStyle(rawValue: surfaceStyleRaw) ?? .balanced,
+            textureEnabled: textureEnabled
+        )
+    }
+
+    private var motionSettings: WorkbenchMotionSettings {
+        WorkbenchMotionSettings(
+            style: WorkbenchMotionStyle(rawValue: motionStyleRaw) ?? .native,
+            panelTransitionsEnabled: panelMotionEnabled,
+            selectionMotionEnabled: selectionMotionEnabled,
+            stateMotionEnabled: stateMotionEnabled,
+            statusPulseEnabled: statusPulseEnabled,
+            entranceMotionEnabled: entranceMotionEnabled
+        )
+    }
+
+    private var panelMotionActive: Bool {
+        motionSettings.allowsPanelMotion(reduceMotion)
+    }
+
+    private var activeAlertBinding: Binding<WorkbenchAlert?> {
+        Binding {
+            if let confirmation = viewModel.pendingConfirmation {
+                return .command(confirmation)
+            }
+            if let confirmation = viewModel.pendingWirelessDebuggingConfirmation {
+                return .wirelessPairing(confirmation)
+            }
+            return nil
+        } set: { _ in
+            // Alert button actions clear the corresponding view-model state.
+        }
+    }
+
+    private func alertContent(for alert: WorkbenchAlert) -> Alert {
+        switch alert {
+        case let .command(confirmation):
+            let primaryButton: Alert.Button = confirmation.kind == .clearLogcat
+                ? .destructive(Text("Clear Logs"), action: viewModel.confirmPendingCommand)
+                : .default(Text("Run"), action: viewModel.confirmPendingCommand)
+            let title: String
+            switch confirmation.kind {
+            case .clearLogcat:
+                title = "Clear Logs?"
+            case .launch:
+                title = "Launch App?"
+            default:
+                title = "Run \(confirmation.kind.rawValue)?"
+            }
+            return Alert(
+                title: Text(title),
                 message: Text(confirmation.message),
-                primaryButton: .default(Text("Run"), action: viewModel.confirmPendingCommand),
+                primaryButton: primaryButton,
                 secondaryButton: .cancel(viewModel.cancelPendingCommand)
             )
-        }
-        .alert(item: $viewModel.pendingWirelessDebuggingConfirmation) { confirmation in
+        case let .wirelessPairing(confirmation):
             let connectText = confirmation.connectAddress.map { "\nConnect address: \($0)" } ?? ""
             return Alert(
                 title: Text("Pair Wireless Device?"),
-                message: Text("Pairing address: \(confirmation.pairingAddress)\(connectText)"),
+                message: Text("Pairing address: \(confirmation.pairingAddress)\nPairing code: \(confirmation.pairingCode)\(connectText)"),
                 primaryButton: .default(Text("Pair"), action: viewModel.confirmWirelessPairing),
                 secondaryButton: .cancel(viewModel.cancelWirelessPairing)
             )
@@ -190,17 +209,77 @@ public struct AgentWorkbenchView: View {
     }
 
     private var showsLeftFeaturePane: Bool {
-        ToolWindowPanel.leftPanels.contains { visiblePanels.contains($0) }
+        Self.showsLeftFeaturePane(in: visiblePanels)
     }
 
     private var showsMainFeaturePane: Bool {
-        visiblePanels.contains(.projectIntelligence)
-            || visiblePanels.contains(.askAssistant)
-            || visiblePanels.contains(.commandConsole)
+        Self.showsMainFeaturePane(in: visiblePanels)
     }
 
     private var showsRightFeaturePane: Bool {
-        showsMainFeaturePane || visiblePanels.contains(.session)
+        Self.showsRightFeaturePane(in: visiblePanels)
+    }
+
+    private func reconcileFeaturePaneMounts() {
+        leftFeaturePaneTransitionGeneration += 1
+        rightFeaturePaneTransitionGeneration += 1
+        leftFeaturePaneMounted = showsLeftFeaturePane
+        rightFeaturePaneMounted = showsRightFeaturePane
+    }
+
+    private func updateLeftFeaturePaneMount(isPresented: Bool) {
+        leftFeaturePaneTransitionGeneration += 1
+        let generation = leftFeaturePaneTransitionGeneration
+        if isPresented {
+            leftFeaturePaneMounted = true
+            return
+        }
+        guard leftFeaturePaneMounted, panelMotionActive else {
+            leftFeaturePaneMounted = false
+            return
+        }
+        schedulePaneUnmount(after: WorkbenchMotion.panelRemovalDelayNanoseconds(reduceMotion: reduceMotion, settings: motionSettings)) {
+            guard generation == leftFeaturePaneTransitionGeneration, !showsLeftFeaturePane else { return }
+            leftFeaturePaneMounted = false
+        }
+    }
+
+    private func updateRightFeaturePaneMount(isPresented: Bool) {
+        rightFeaturePaneTransitionGeneration += 1
+        let generation = rightFeaturePaneTransitionGeneration
+        if isPresented {
+            rightFeaturePaneMounted = true
+            return
+        }
+        guard rightFeaturePaneMounted, panelMotionActive else {
+            rightFeaturePaneMounted = false
+            return
+        }
+        schedulePaneUnmount(after: WorkbenchMotion.panelRemovalDelayNanoseconds(reduceMotion: reduceMotion, settings: motionSettings)) {
+            guard generation == rightFeaturePaneTransitionGeneration, !showsRightFeaturePane else { return }
+            rightFeaturePaneMounted = false
+        }
+    }
+
+    private func schedulePaneUnmount(after nanoseconds: UInt64, action: @escaping @MainActor () -> Void) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            action()
+        }
+    }
+
+    private static func showsLeftFeaturePane(in panels: Set<ToolWindowPanel>) -> Bool {
+        ToolWindowPanel.leftPanels.contains { panels.contains($0) }
+    }
+
+    private static func showsMainFeaturePane(in panels: Set<ToolWindowPanel>) -> Bool {
+        panels.contains(.projectIntelligence)
+            || panels.contains(.askAssistant)
+            || panels.contains(.commandConsole)
+    }
+
+    private static func showsRightFeaturePane(in panels: Set<ToolWindowPanel>) -> Bool {
+        showsMainFeaturePane(in: panels) || panels.contains(.session)
     }
 
     private static func saveVisiblePanels(_ panels: Set<ToolWindowPanel>) {
@@ -218,44 +297,87 @@ public struct AgentWorkbenchView: View {
 
 private struct ShellTitleBar: View {
     @ObservedObject var viewModel: AgentViewModel
+    @Binding var isSettingsPresented: Bool
+    @Environment(\.workbenchThemeSettings) private var themeSettings
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "curlybraces.square.fill")
-                .font(.title3)
-                .foregroundStyle(Palette.teal)
-                .frame(width: 22)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(themeSettings.accentColor)
+                .frame(width: 30, height: 30)
+                .background {
+                    SurfaceFill(cornerRadius: 8, tint: themeSettings.accentColor.opacity(0.11), material: .ultraThin, textureOpacity: 0.006)
+                }
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(themeSettings.accentColor.opacity(0.22)))
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Android Dev Agent")
-                    .font(.headline.weight(.semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 Text(viewModel.projectSubtitle)
                     .font(.caption2)
                     .foregroundStyle(Palette.muted)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             StatusPill(
                 text: viewModel.isRunningCommand ? viewModel.lastCommandTitle : viewModel.confidenceDisplay,
                 color: shellStatusColor(for: viewModel),
                 symbol: viewModel.isRunningCommand ? "clock.arrow.circlepath" : viewModel.scanState.symbol
             )
+            .frame(maxWidth: 280, alignment: .trailing)
+            .workbenchPulse(isActive: isBusy)
 
             Text("v1.0")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(Palette.muted)
+                .lineLimit(1)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Palette.inputBackground))
+                .background {
+                    SurfaceFill(cornerRadius: 6, tint: Palette.inputBackground, material: .ultraThin, textureOpacity: 0.004)
+                }
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Palette.border.opacity(0.72)))
 
-            if viewModel.isRunningCommand || viewModel.isScanningProject || viewModel.isRefreshingDevices || viewModel.isRunningWirelessDebugging {
+            Button {
+                isSettingsPresented.toggle()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(isSettingsPresented ? themeSettings.accentColor : Palette.muted)
+            .background {
+                SurfaceFill(
+                    cornerRadius: 7,
+                    tint: isSettingsPresented ? themeSettings.accentColor.opacity(0.12) : Palette.controlBackground,
+                    material: .ultraThin,
+                    textureOpacity: 0.004
+                )
+            }
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(isSettingsPresented ? themeSettings.accentColor.opacity(0.38) : Palette.controlBorder))
+            .help("Agent Settings")
+            .namedControl("Open Agent Settings", hint: "Opens appearance and theme settings.")
+            .popover(isPresented: $isSettingsPresented, arrowEdge: .bottom) {
+                AgentSettingsPopover()
+                    .environment(\.workbenchThemeSettings, themeSettings)
+                    .environment(\.workbenchMotionSettings, motionSettings)
+            }
+
+            if isBusy {
                 ProgressView()
                     .controlSize(.small)
+                    .frame(width: 22, height: 22)
                     .accessibilityLabel("Busy")
             } else {
                 Color.clear
@@ -263,9 +385,24 @@ private struct ShellTitleBar: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: 48)
-        .background(Palette.titleBar)
+        .padding(.leading, 82)
+        .padding(.trailing, 16)
+        .frame(height: 54)
+        .background {
+            PaneBackdrop(role: .titleBar)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Palette.border)
+                .frame(height: 1)
+        }
+    }
+
+    private var isBusy: Bool {
+        viewModel.isRunningCommand
+            || viewModel.isScanningProject
+            || viewModel.isRefreshingDevices
+            || viewModel.isRunningWirelessDebugging
     }
 }
 
@@ -273,12 +410,16 @@ private struct ToolWindowRail: View {
     let side: ToolWindowSide
     let panels: [ToolWindowPanel]
     @Binding var visiblePanels: Set<ToolWindowPanel>
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
         VStack(spacing: 7) {
             Text(side == .left ? "Primary" : "Assistant")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(Palette.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
 
@@ -295,15 +436,17 @@ private struct ToolWindowRail: View {
                 ) {
                     toggle(panel)
                 }
-                .frame(width: 64, height: 46)
+                .frame(width: 62, height: 46)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.top, 8)
-        .padding(.horizontal, 6)
-        .frame(width: 78)
-        .background(Palette.titleBar)
+        .padding(.top, 10)
+        .padding(.horizontal, 7)
+        .frame(width: 76)
+        .background {
+            PaneBackdrop(role: .rail)
+        }
         .accessibilityElement(children: .contain)
     }
 
@@ -312,10 +455,12 @@ private struct ToolWindowRail: View {
     }
 
     private func toggle(_ panel: ToolWindowPanel) {
-        if visiblePanels.contains(panel) {
-            visiblePanels.remove(panel)
-        } else {
-            visiblePanels.insert(panel)
+        withAnimation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings)) {
+            if visiblePanels.contains(panel) {
+                visiblePanels.remove(panel)
+            } else {
+                visiblePanels.insert(panel)
+            }
         }
     }
 }
@@ -329,6 +474,10 @@ private struct RailButton: View {
     let isSelected: Bool
     let shortcut: KeyEquivalent
     let action: () -> Void
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchThemeSettings) private var themeSettings
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
         Button {
@@ -339,20 +488,33 @@ private struct RailButton: View {
                     .font(.system(size: 18, weight: .bold))
                     .frame(height: 20)
                 Text(title)
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .minimumScaleFactor(0.7)
             }
-            .frame(width: 64, height: 46)
-            .foregroundStyle(isSelected ? Palette.blue : Palette.railMuted)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Palette.railSelectedBackground : Palette.railBackground)
-            )
+            .frame(width: 62, height: 46)
+            .foregroundStyle(foregroundColor)
+            .background {
+                SurfaceFill(
+                    cornerRadius: 8,
+                    tint: backgroundTint,
+                    material: .ultraThin,
+                    textureOpacity: isSelected ? 0.010 : 0.004
+                )
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(isSelected ? Palette.railSelectedBorder : Palette.railBorder, lineWidth: 1)
             )
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(themeSettings.accentColor)
+                        .frame(width: 3, height: 24)
+                        .padding(.leading, 4)
+                }
+            }
+            .shadow(color: isSelected ? themeSettings.accentColor.opacity(0.16 * themeSettings.surfaceStyle.shadowScale) : Palette.controlShadow.opacity(themeSettings.surfaceStyle.shadowScale), radius: isSelected ? 5 : 2, x: 0, y: 1)
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
@@ -362,12 +524,27 @@ private struct RailButton: View {
         .accessibilityLabel(Text(accessibilityTitle))
         .accessibilityHint(Text(accessibilityHelp))
         .accessibilityIdentifier(identifier)
+        .onHover { isHovering = $0 }
+        .animation(WorkbenchMotion.state(reduceMotion, settings: motionSettings), value: isHovering)
+        .animation(WorkbenchMotion.selection(reduceMotion, settings: motionSettings), value: isSelected)
+    }
+
+    private var foregroundColor: Color {
+        if isSelected { return themeSettings.accentColor }
+        return isHovering ? Palette.ink : Palette.railMuted
+    }
+
+    private var backgroundTint: Color {
+        if isSelected { return themeSettings.accentColor.opacity(0.16) }
+        return isHovering ? Palette.railHoverBackground : Palette.railBackground
     }
 }
 
 private struct EmptyToolWindowCanvas: View {
     @ObservedObject var viewModel: AgentViewModel
     @Binding var visiblePanels: Set<ToolWindowPanel>
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
         VStack(spacing: 14) {
@@ -378,41 +555,39 @@ private struct EmptyToolWindowCanvas: View {
             Text("Android Dev Agent")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Palette.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
             Text(viewModel.isProjectLoaded ? "Workspace context is ready." : "Choose Workspace to scan an Android project, or Ask to draft a plan.")
                 .font(.caption)
                 .foregroundStyle(Palette.muted)
                 .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 8) {
-                Button {
-                    visiblePanels.insert(.workspace)
-                } label: {
-                    Label("Workspace", systemImage: "folder")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    startWorkspaceButton
+                    startAskButton
+                    startSessionButton
                 }
-                .buttonStyle(ReadableProminentButtonStyle(color: Palette.blue))
-                .namedControl("Open Workspace panel", hint: "Shows project selection and scan controls.")
 
-                Button {
-                    visiblePanels.insert(.askAssistant)
-                } label: {
-                    Label("Ask", systemImage: "text.bubble")
+                VStack(spacing: 8) {
+                    startWorkspaceButton
+                    HStack(spacing: 8) {
+                        startAskButton
+                        startSessionButton
+                    }
                 }
-                .buttonStyle(ReadableBorderedButtonStyle())
-                .namedControl("Open Ask The Assistant panel", hint: "Shows the prompt composer.")
-
-                Button {
-                    visiblePanels.insert(.session)
-                } label: {
-                    Label("Session", systemImage: "rectangle.rightthird.inset.filled")
-                }
-                .buttonStyle(ReadableBorderedButtonStyle())
-                .namedControl("Open Session panel", hint: "Shows chat, diagnostics, and checks.")
             }
             .controlSize(.small)
 
+            LaunchReadinessOnboardingCard(visiblePanels: $visiblePanels)
+
             if !savedPanels.isEmpty {
                 Button {
-                    visiblePanels = savedPanels
+                    updateVisiblePanels { panels in
+                        panels = savedPanels
+                    }
                 } label: {
                     Label("Restore Last Layout", systemImage: "rectangle.3.group")
                 }
@@ -423,7 +598,10 @@ private struct EmptyToolWindowCanvas: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.workspace)
+        .background {
+            PaneBackdrop(role: .workspace)
+        }
+        .motionEntrance()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Android Dev Agent start area")
     }
@@ -432,55 +610,206 @@ private struct EmptyToolWindowCanvas: View {
         let values = UserDefaults.standard.stringArray(forKey: agentWorkbenchVisiblePanelsKey) ?? []
         return Set(values.compactMap(ToolWindowPanel.init(rawValue:)))
     }
+
+    private var startWorkspaceButton: some View {
+        Button {
+            updateVisiblePanels { panels in
+                panels.insert(.workspace)
+            }
+        } label: {
+            Label("Workspace", systemImage: "folder")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableProminentButtonStyle(color: Palette.blue))
+        .namedControl("Open Workspace panel", hint: "Shows project selection and scan controls.")
+    }
+
+    private var startAskButton: some View {
+        Button {
+            updateVisiblePanels { panels in
+                panels.insert(.askAssistant)
+            }
+        } label: {
+            Label("Ask", systemImage: "text.bubble")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .namedControl("Open Ask The Assistant panel", hint: "Shows the prompt composer.")
+    }
+
+    private var startSessionButton: some View {
+        Button {
+            updateVisiblePanels { panels in
+                panels.insert(.session)
+            }
+        } label: {
+            Label("Session", systemImage: "rectangle.rightthird.inset.filled")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .namedControl("Open Session panel", hint: "Shows chat, diagnostics, and checks.")
+    }
+
+    private func updateVisiblePanels(_ update: (inout Set<ToolWindowPanel>) -> Void) {
+        withAnimation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings)) {
+            update(&visiblePanels)
+        }
+    }
+}
+
+private struct SlidingFeaturePane<Content: View>: View {
+    let isPresented: Bool
+    let edge: Edge
+    let animateOnAppear: Bool
+    private let content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
+    @State private var isVisuallyPresented = false
+
+    init(
+        isPresented: Bool,
+        edge: Edge,
+        animateOnAppear: Bool,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.isPresented = isPresented
+        self.edge = edge
+        self.animateOnAppear = animateOnAppear
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .opacity(isVisuallyPresented ? 1 : 0)
+            .offset(x: horizontalOffset)
+            .clipped()
+            .animation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings), value: isVisuallyPresented)
+            .onAppear {
+                guard animateOnAppear, motionSettings.allowsPanelMotion(reduceMotion) else {
+                    isVisuallyPresented = isPresented
+                    return
+                }
+                isVisuallyPresented = false
+                DispatchQueue.main.async {
+                    withAnimation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings)) {
+                        isVisuallyPresented = isPresented
+                    }
+                }
+            }
+            .onChange(of: isPresented) { _, presented in
+                withAnimation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings)) {
+                    isVisuallyPresented = presented
+                }
+            }
+            .onChange(of: motionSettings) { _, settings in
+                if !settings.allowsPanelMotion(reduceMotion) {
+                    isVisuallyPresented = isPresented
+                }
+            }
+            .onChange(of: reduceMotion) { _, reduced in
+                if !motionSettings.allowsPanelMotion(reduced) {
+                    isVisuallyPresented = isPresented
+                }
+            }
+    }
+
+    private var horizontalOffset: CGFloat {
+        guard motionSettings.allowsPanelMotion(reduceMotion), !isVisuallyPresented else { return 0 }
+        switch edge {
+        case .leading:
+            return -36
+        case .trailing:
+            return 36
+        default:
+            return 0
+        }
+    }
 }
 
 private struct WorkspaceSidebarPane: View {
     @ObservedObject var viewModel: AgentViewModel
     @Binding var visiblePanels: Set<ToolWindowPanel>
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
                 if visiblePanels.contains(.workspace) {
-                    HStack(spacing: 8) {
-                        Button(action: viewModel.chooseProject) {
-                            Label("Choose and Scan", systemImage: "folder.badge.gearshape")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(ReadableProminentButtonStyle(color: Palette.blue))
-                        .disabled(viewModel.isScanningProject)
-                        .help("Choose an Android project and scan it immediately.")
-                        .namedControl("Choose and scan Android workspace", hint: "Opens a folder picker and starts project scanning.")
+                    FeatureBoundary {
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 8) {
+                                chooseAndScanButton
+                                chooseOnlyButton
+                            }
 
-                        Button(action: viewModel.chooseProjectOnly) {
-                            Label("Select", systemImage: "folder")
+                            VStack(spacing: 8) {
+                                chooseAndScanButton
+                                chooseOnlyButton
+                            }
                         }
-                        .buttonStyle(ReadableBorderedButtonStyle())
-                        .disabled(viewModel.isScanningProject)
-                        .help("Choose a project folder without scanning yet.")
-                        .namedControl("Select Android workspace without scanning", hint: "Opens a folder picker and leaves scanning under your control.")
+                        .controlSize(.small)
+
+                        ClosableSectionTitle("Workspace", symbol: "folder", panel: .workspace, visiblePanels: $visiblePanels)
+                        WorkspacePathCard(viewModel: viewModel)
                     }
-                    .controlSize(.small)
-
-                    ClosableSectionTitle("Workspace", symbol: "folder", panel: .workspace, visiblePanels: $visiblePanels)
-                    WorkspacePathCard(viewModel: viewModel)
+                    .transition(featureTransition)
                 }
                 if visiblePanels.contains(.androidTarget) {
-                    WorkspaceOptionsDisclosure(viewModel: viewModel)
+                    FeatureBoundary {
+                        WorkspaceOptionsDisclosure(viewModel: viewModel)
+                    }
+                    .transition(featureTransition)
                 }
                 if visiblePanels.contains(.runTools) {
-                    SidebarToolList(viewModel: viewModel)
+                    FeatureBoundary {
+                        SidebarToolList(viewModel: viewModel)
+                    }
+                    .transition(featureTransition)
                 }
                 if visiblePanels.contains(.files) {
-                    SidebarFileBrowser(viewModel: viewModel, visiblePanels: $visiblePanels)
+                    FeatureBoundary {
+                        SidebarFileBrowser(viewModel: viewModel, visiblePanels: $visiblePanels)
+                    }
+                    .transition(featureTransition)
                 }
             }
             .padding(16)
+            .animation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings), value: visiblePanels)
         }
-        .background(Palette.sidebar)
+        .accessibilityLabel("Primary tool pane scroll area")
+        .background {
+            PaneBackdrop(role: .sidebar)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Primary tool pane")
         .accessibilityIdentifier("Primary tool pane")
+    }
+
+    private var featureTransition: AnyTransition {
+        WorkbenchMotion.featureTransition(edge: .leading, reduceMotion: reduceMotion, settings: motionSettings)
+    }
+
+    private var chooseAndScanButton: some View {
+        Button(action: viewModel.chooseProject) {
+            Label("Choose and Scan", systemImage: "folder.badge.gearshape")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableProminentButtonStyle(color: Palette.blue))
+        .disabled(!viewModel.canEditProjectSelection)
+        .help(viewModel.canEditProjectSelection ? "Choose an Android project and scan it immediately." : viewModel.projectSelectionHelpText)
+        .namedControl("Choose and scan Android workspace", hint: "Opens a folder picker and starts project scanning.")
+    }
+
+    private var chooseOnlyButton: some View {
+        Button(action: viewModel.chooseProjectOnly) {
+            Label("Select", systemImage: "folder")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .disabled(!viewModel.canEditProjectSelection)
+        .help(viewModel.canEditProjectSelection ? "Choose a project folder without scanning yet." : viewModel.projectSelectionHelpText)
+        .namedControl("Select Android workspace without scanning", hint: "Opens a folder picker and leaves scanning under your control.")
     }
 }
 
@@ -500,36 +829,24 @@ private struct WorkspacePathCard: View {
                 DiagnosticRowView(row: viewModel.projectPathFeedback)
 
                 TextField("Android project path", text: $viewModel.projectPath)
-                    .textFieldStyle(.roundedBorder)
+                    .workbenchTextField()
                     .font(.caption)
-                    .disabled(viewModel.isScanningProject)
+                    .disabled(!viewModel.canEditProjectSelection)
+                    .help(viewModel.canEditProjectSelection ? "Paste a project folder path, then press Return to scan." : viewModel.projectSelectionHelpText)
                     .onSubmit(viewModel.scanProject)
                     .namedControl("Android project path", hint: "Paste a project folder path, then press Return to scan.")
 
-                HStack(spacing: 8) {
-                    if viewModel.isScanningProject {
-                        Button(action: viewModel.cancelScan) {
-                            Label("Cancel Scan", systemImage: "xmark.circle")
-                        }
-                        .help("Cancel the current scan.")
-                        .namedControl("Cancel project scan")
-                    } else {
-                        Button(action: viewModel.scanProject) {
-                            Label(viewModel.isProjectLoaded ? "Rescan" : "Scan", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(!viewModel.canScanProject)
-                        .help(viewModel.projectPathFeedback.detail)
-                        .namedControl(viewModel.isProjectLoaded ? "Rescan project" : "Scan project")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        scanOrCancelProjectButton
+                        revealProjectButton
+                        Spacer(minLength: 0)
                     }
 
-                    Button(action: viewModel.openProjectInFinder) {
-                        Label("Reveal", systemImage: "folder")
+                    VStack(alignment: .leading, spacing: 6) {
+                        scanOrCancelProjectButton
+                        revealProjectButton
                     }
-                    .disabled(viewModel.projectPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help("Reveal the selected path in Finder.")
-                    .namedControl("Reveal selected project path")
-
-                    Spacer(minLength: 0)
                 }
                 .buttonStyle(ReadableBorderedButtonStyle())
                 .controlSize(.small)
@@ -541,6 +858,7 @@ private struct WorkspacePathCard: View {
                     Text("Drop a folder, paste a path, or choose a recent project.")
                         .font(.caption)
                         .foregroundStyle(Palette.muted)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -559,6 +877,7 @@ private struct WorkspacePathCard: View {
                         Button("Clear Missing Projects") {
                             viewModel.clearMissingRecentProjects()
                         }
+                        .disabled(!viewModel.hasMissingRecentProjects)
                         Button("Clear Recent Projects") {
                             viewModel.clearRecentProjects()
                         }
@@ -567,7 +886,6 @@ private struct WorkspacePathCard: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
-                    .colorScheme(.light)
                     .controlSize(.small)
                     .help("Open a recently scanned Android project.")
                     .namedControl("Recent projects")
@@ -575,14 +893,47 @@ private struct WorkspacePathCard: View {
             }
         }
     }
+
+    private var scanOrCancelProjectButton: some View {
+        Group {
+            if viewModel.isScanningProject {
+                Button(action: viewModel.cancelScan) {
+                    Label("Cancel Scan", systemImage: "xmark.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .help("Cancel the current scan.")
+                .namedControl("Cancel project scan")
+            } else {
+                Button(action: viewModel.scanProject) {
+                    Label(viewModel.isProjectLoaded ? "Rescan" : "Scan", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+                .disabled(!viewModel.canScanProject)
+                .help(viewModel.projectPathFeedback.detail)
+                .namedControl(viewModel.isProjectLoaded ? "Rescan project" : "Scan project")
+            }
+        }
+    }
+
+    private var revealProjectButton: some View {
+        Button(action: viewModel.openProjectInFinder) {
+            Label("Reveal", systemImage: "folder")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.canRevealProjectPath)
+        .help(viewModel.projectRevealHelpText)
+        .namedControl("Reveal selected project path")
+    }
 }
 
 private struct WorkspaceOptionsDisclosure: View {
     @ObservedObject var viewModel: AgentViewModel
     @State private var isExpanded = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        DisclosureGroup(isExpanded: animatedDisclosureBinding($isExpanded, reduceMotion: reduceMotion, settings: motionSettings)) {
             VStack(alignment: .leading, spacing: 10) {
                 ProjectMetricStrip(viewModel: viewModel)
                 AndroidTargetCard(viewModel: viewModel)
@@ -596,9 +947,10 @@ private struct WorkspaceOptionsDisclosure: View {
 
 private struct AndroidTargetCard: View {
     @ObservedObject var viewModel: AgentViewModel
+    @State private var isWirelessConnectionSheetPresented = false
 
     var body: some View {
-        ContentCard {
+        ContentCard(horizontalPadding: 1) {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader(title: "Android Target", symbol: "slider.horizontal.3")
                     .font(.subheadline.weight(.semibold))
@@ -607,24 +959,20 @@ private struct AndroidTargetCard: View {
                     Text("Gradle target")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Palette.muted)
-                    HStack(spacing: 8) {
-                        ReadableStringDropdown(
-                            title: "Module",
-                            selection: $viewModel.selectedModule,
-                            options: viewModel.modules,
-                            symbol: "square.stack.3d.up"
-                        )
-                        .namedControl("Gradle module")
-                        ReadableStringDropdown(
-                            title: "Variant",
-                            selection: $viewModel.selectedVariant,
-                            options: viewModel.buildVariants,
-                            symbol: "tag"
-                        )
-                        .namedControl("Build variant")
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            gradleModuleDropdown
+                            gradleVariantDropdown
+                        }
+
+                        VStack(spacing: 8) {
+                            gradleModuleDropdown
+                            gradleVariantDropdown
+                        }
                     }
                     .controlSize(.small)
-                    .disabled(!viewModel.isProjectLoaded)
+                    .disabled(!viewModel.canEditBuildTarget)
+                    .help(viewModel.buildTargetHelpText)
                 }
 
                 Divider()
@@ -633,107 +981,66 @@ private struct AndroidTargetCard: View {
                     Text("Device")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Palette.muted)
-                    HStack(spacing: 8) {
-                        ReadableDeviceDropdown(viewModel: viewModel)
-                        .disabled(viewModel.isRefreshingDevices || viewModel.isRunningWirelessDebugging || viewModel.devices.isEmpty)
-                        .help(viewModel.deviceSummary)
-                        .namedControl("Android device")
-
-                        Button(action: viewModel.refreshDevices) {
-                            Label(viewModel.isRefreshingDevices ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            deviceDropdown
+                            refreshDevicesButton
                         }
-                        .buttonStyle(ReadableBorderedButtonStyle())
-                        .disabled(!viewModel.canRefreshDevices)
-                        .help("Refresh attached Android devices. This does not require a loaded project.")
-                        .namedControl("Refresh Android devices")
+
+                        VStack(spacing: 8) {
+                            deviceDropdown
+                            refreshDevicesButton
+                        }
                     }
                     .controlSize(.small)
                     Text(viewModel.deviceSummary)
                         .font(.caption2)
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
+                    if viewModel.hasConnectedDevice {
+                        connectedDeviceActions
+                    }
+                    if !viewModel.deviceRecoveryGuidance.isEmpty {
+                        Label(viewModel.deviceRecoveryGuidance, systemImage: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(Palette.amber)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .namedControl("Android device recovery guidance")
+                    }
+                    if !viewModel.hasConnectedDevice {
+                        connectWirelessDevicesButton
+                    }
                 }
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack {
-                        Text("Wireless Debugging")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(Palette.muted)
-                        Spacer(minLength: 0)
-                        if viewModel.isRunningWirelessDebugging {
-                            ProgressView()
-                                .controlSize(.small)
-                                .accessibilityLabel("Wireless Debugging running")
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 8) {
-                            TextField("Code", text: $viewModel.wirelessPairingCode)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.caption)
-                                .namedControl("Wireless pairing code", hint: "Enter only the pairing code. The pairing address is discovered and shown in the confirmation popup.")
-                            Button(action: viewModel.pairWirelessDevice) {
-                                Label("Pair", systemImage: "link.badge.plus")
-                            }
-                            .buttonStyle(ReadableBorderedButtonStyle())
-                            .disabled(!viewModel.canPairWirelessDevice)
-                            .namedControl("Pair wireless Android device")
-                        }
-
-                        HStack(spacing: 8) {
-                            TextField("Connect address 192.168.1.10:42177", text: $viewModel.wirelessConnectAddress)
-                                .textFieldStyle(.roundedBorder)
-                                .font(.caption)
-                                .namedControl("Wireless connect address", hint: "Enter the host and connect port shown in Android Wireless Debugging.")
-                            Button(action: viewModel.connectWirelessDevice) {
-                                Label("Connect", systemImage: "wifi")
-                            }
-                            .buttonStyle(ReadableBorderedButtonStyle())
-                            .disabled(!viewModel.canConnectWirelessDevice)
-                            .namedControl("Connect wireless Android device")
-                            Button(action: viewModel.disconnectWirelessDevice) {
-                                Label("Disconnect", systemImage: "wifi.slash")
-                            }
-                            .buttonStyle(ReadableBorderedButtonStyle())
-                            .disabled(!viewModel.canDisconnectWirelessDevice)
-                            .namedControl("Disconnect wireless Android device")
-                        }
-                    }
-                    .controlSize(.small)
-
-                    Text(viewModel.wirelessDebuggingSummary)
-                        .font(.caption2)
-                        .foregroundStyle(Palette.muted)
-                        .fixedSize(horizontal: false, vertical: true)
+                if viewModel.shouldShowDeviceScreenPreview {
+                    DeviceScreenPreviewPanel(viewModel: viewModel)
+                    Divider()
                 }
-
-                Divider()
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Launch package")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Palette.muted)
                     TextField("Package override for Launch", text: $viewModel.packageOverride)
-                        .textFieldStyle(.roundedBorder)
+                        .workbenchTextField()
                         .font(.caption)
-                        .disabled(!viewModel.isProjectLoaded)
+                        .disabled(!viewModel.canEditLaunchTarget)
+                        .help(viewModel.launchPackageHelpText)
                         .namedControl("Launch package override", hint: "Overrides the detected package used for Launch.")
                     if viewModel.isProjectLoaded {
-                        HStack(spacing: 6) {
-                            Text("Detected: \(viewModel.profile.packageName)")
-                                .font(.caption2)
-                                .foregroundStyle(Palette.muted)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Button(action: viewModel.resetLaunchPackageToDetected) {
-                                Label("Use Detected", systemImage: "arrow.uturn.backward")
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 6) {
+                                detectedLaunchPackageText
+                                Spacer(minLength: 0)
+                                useDetectedLaunchPackageButton
                             }
-                            .buttonStyle(ReadableBorderedButtonStyle())
-                            .controlSize(.small)
-                            .namedControl("Use detected launch package", hint: "Copies the detected package into the launch package field.")
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                detectedLaunchPackageText
+                                useDetectedLaunchPackageButton
+                            }
                         }
                     }
                 }
@@ -743,15 +1050,640 @@ private struct AndroidTargetCard: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Palette.muted)
                     TextField("Launch activity, for example .MainActivity", text: $viewModel.launchActivity)
-                        .textFieldStyle(.roundedBorder)
+                        .workbenchTextField()
                         .font(.caption)
-                        .disabled(!viewModel.isProjectLoaded)
+                        .disabled(!viewModel.canEditLaunchTarget)
+                        .help(viewModel.launchActivityHelpText)
                         .namedControl("Launch activity")
                 }
 
                 DiagnosticRowView(row: viewModel.launchTargetFeedback)
             }
         }
+        .sheet(isPresented: $isWirelessConnectionSheetPresented) {
+            WirelessDeviceConnectionSheet(viewModel: viewModel)
+        }
+    }
+
+    private var gradleModuleDropdown: some View {
+        ReadableStringDropdown(
+            title: "Module",
+            selection: $viewModel.selectedModule,
+            options: viewModel.modules,
+            symbol: "square.stack.3d.up"
+        )
+        .namedControl("Gradle module")
+    }
+
+    private var gradleVariantDropdown: some View {
+        ReadableStringDropdown(
+            title: "Variant",
+            selection: $viewModel.selectedVariant,
+            options: viewModel.buildVariants,
+            symbol: "tag"
+        )
+        .namedControl("Build variant")
+    }
+
+    private var deviceDropdown: some View {
+        ReadableDeviceDropdown(viewModel: viewModel)
+            .disabled(!viewModel.canSelectDevice)
+            .help(viewModel.devicePickerHelpText)
+            .namedControl("Android device")
+    }
+
+    private var refreshDevicesButton: some View {
+        Button(action: viewModel.refreshDevices) {
+            Label(viewModel.isRefreshingDevices ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .disabled(!viewModel.canRefreshDevices)
+        .help(viewModel.refreshDevicesHelpText)
+        .namedControl("Refresh Android devices")
+    }
+
+    private var connectedDeviceActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                disconnectSelectedWirelessDeviceButton
+            }
+
+            disconnectSelectedWirelessDeviceButton
+        }
+        .controlSize(.small)
+    }
+
+    private var disconnectSelectedWirelessDeviceButton: some View {
+        Button(action: viewModel.disconnectWirelessDevice) {
+            Label("Disconnect", systemImage: "wifi.slash")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .disabled(!viewModel.canDisconnectSelectedWirelessDevice)
+        .help(viewModel.canDisconnectSelectedWirelessDevice ? "Disconnect the selected wireless Android device." : "Disconnect is available for connected wireless targets.")
+        .namedControl("Disconnect selected wireless Android device")
+    }
+
+    private var connectWirelessDevicesButton: some View {
+        Button {
+            isWirelessConnectionSheetPresented = true
+        } label: {
+            Label("Connect wireless devices", systemImage: "wifi")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .controlSize(.small)
+        .disabled(viewModel.isRunningWirelessDebugging)
+        .help(viewModel.isRunningWirelessDebugging ? "Wireless connection is already running." : "Open wireless Android device connection options.")
+        .namedControl("Connect wireless devices", hint: "Opens QR code and pairing code connection options.")
+    }
+
+    private var detectedLaunchPackageText: some View {
+        Text("Detected: \(viewModel.profile.packageName)")
+            .font(.caption2)
+            .foregroundStyle(Palette.muted)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .minimumScaleFactor(0.75)
+    }
+
+    private var useDetectedLaunchPackageButton: some View {
+        Button(action: viewModel.resetLaunchPackageToDetected) {
+            Label("Use Detected", systemImage: "arrow.uturn.backward")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .controlSize(.small)
+        .disabled(!viewModel.canResetLaunchPackageToDetected)
+        .help(viewModel.launchPackageHelpText)
+        .namedControl("Use detected launch package", hint: "Copies the detected package into the launch package field.")
+    }
+}
+
+private enum WirelessConnectionMethod: String, CaseIterable, Identifiable {
+    case qrCode = "Scan via QR Code"
+    case pairingCode = "Scan via pairing code"
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .qrCode: return "qrcode"
+        case .pairingCode: return "number"
+        }
+    }
+}
+
+private struct WirelessDeviceConnectionSheet: View {
+    @ObservedObject var viewModel: AgentViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedMethod: WirelessConnectionMethod = .qrCode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Label("Connect wireless devices", systemImage: "wifi")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(Palette.ink)
+                Spacer(minLength: 0)
+                if viewModel.isRunningWirelessDebugging {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Wireless connection running")
+                }
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Circle())
+                .help("Close")
+                .namedControl("Close wireless device connection")
+            }
+
+            WirelessDeviceDiscoveryList(viewModel: viewModel)
+
+            WirelessConnectionMethodSelector(selection: $selectedMethod)
+
+            switch selectedMethod {
+            case .qrCode:
+                WirelessQRCodeConnectionPanel(viewModel: viewModel)
+            case .pairingCode:
+                if viewModel.hasSelectedWirelessDebuggingDevice {
+                    WirelessPairingCodeConnectionPanel(viewModel: viewModel)
+                } else {
+                    Text("Select a discovered wireless device to pair with code.")
+                        .font(.caption2)
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Text(viewModel.wirelessDebuggingStatus)
+                .font(.caption2)
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(width: 430)
+        .background {
+            PaneBackdrop(role: .inspector)
+        }
+        .foregroundStyle(Palette.ink)
+        .onAppear(perform: viewModel.prepareWirelessDeviceConnectionSheet)
+    }
+}
+
+private struct WirelessDeviceDiscoveryList: View {
+    @ObservedObject var viewModel: AgentViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Available devices")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Palette.ink)
+                Spacer(minLength: 0)
+                if viewModel.isRunningWirelessDebugging {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Scanning wireless devices")
+                }
+                Button(action: viewModel.refreshWirelessDebuggingDevices) {
+                    Label(viewModel.isRunningWirelessDebugging ? "Scanning" : "Scan", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(ReadableBorderedButtonStyle())
+                .controlSize(.small)
+                .disabled(!viewModel.canRefreshWirelessDebuggingDevices)
+                .help(viewModel.wirelessDiscoveryHelpText)
+                .namedControl("Scan wireless debugging devices")
+            }
+
+            if viewModel.wirelessDebuggingDevices.isEmpty {
+                Text(viewModel.wirelessDeviceDiscoveryStatus)
+                    .font(.caption2)
+                    .foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background {
+                        SurfaceFill(cornerRadius: 8, tint: Palette.surface, material: .ultraThin, textureOpacity: 0.006)
+                    }
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border.opacity(0.66)))
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(viewModel.wirelessDebuggingDevices) { device in
+                        WirelessDebuggingDeviceRow(
+                            device: device,
+                            isSelected: viewModel.selectedWirelessDebuggingDeviceID == device.id
+                        ) {
+                            viewModel.selectWirelessDebuggingDevice(device)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct WirelessDebuggingDeviceRow: View {
+    let device: WirelessDebuggingDevice
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "wifi")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isSelected ? Palette.blue : Palette.muted)
+                    .frame(width: 18)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(device.displayName)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(device.detail)
+                        .font(.caption2)
+                        .foregroundStyle(Palette.muted)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .layoutPriority(1)
+                Spacer(minLength: 8)
+                Text(device.capabilitySummary)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(isSelected ? Palette.blue : Palette.muted)
+                    .lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 5).fill((isSelected ? Palette.blue : Palette.muted).opacity(0.10)))
+            }
+            .padding(9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                SurfaceFill(cornerRadius: 8, tint: isSelected ? Palette.blue.opacity(0.08) : Palette.surface, material: .ultraThin, textureOpacity: 0.006)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(isSelected ? Palette.blue.opacity(0.55) : Palette.border))
+        }
+        .buttonStyle(.plain)
+        .namedControl(device.displayName, hint: "Selects this wireless Android device.")
+    }
+}
+
+private struct WirelessConnectionMethodSelector: View {
+    @Binding var selection: WirelessConnectionMethod
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(WirelessConnectionMethod.allCases) { method in
+                Button {
+                    selection = method
+                } label: {
+                    Label(method.rawValue, systemImage: method.symbol)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                        .frame(maxWidth: .infinity, minHeight: 30)
+                }
+                .buttonStyle(WirelessConnectionMethodButtonStyle(isSelected: selection == method))
+                .namedControl(method.rawValue)
+            }
+        }
+        .padding(3)
+        .background {
+            SurfaceFill(cornerRadius: 8, tint: Palette.surface, material: .ultraThin, textureOpacity: 0.004)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border.opacity(0.68)))
+        .namedControl("Wireless connection method")
+    }
+}
+
+private struct WirelessConnectionMethodButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isSelected ? Color.white : Palette.ink)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(buttonBackground(isPressed: configuration.isPressed))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func buttonBackground(isPressed: Bool) -> Color {
+        if isSelected {
+            return isPressed ? Palette.blue.opacity(0.82) : Palette.blue
+        }
+        return isPressed ? Palette.inputBackground : Palette.surface
+    }
+}
+
+private struct WirelessPairingCodeConnectionPanel: View {
+    @ObservedObject var viewModel: AgentViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Scan via pairing code")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Palette.ink)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    wirelessPairingCodeField
+                    pairWirelessButton
+                }
+
+                VStack(spacing: 8) {
+                    wirelessPairingCodeField
+                    pairWirelessButton
+                }
+            }
+
+            wirelessConnectionButtons
+        }
+        .controlSize(.small)
+    }
+
+    private var wirelessPairingCodeField: some View {
+        TextField("Code", text: $viewModel.wirelessPairingCode)
+            .workbenchTextField()
+            .font(.caption)
+            .foregroundStyle(Palette.ink)
+            .disabled(!viewModel.canEditWirelessDebuggingFields)
+            .namedControl("Wireless pairing code", hint: "Enter only the pairing code. The pairing address is discovered and shown in the confirmation popup.")
+    }
+
+    private var pairWirelessButton: some View {
+        Button(action: viewModel.pairWirelessDevice) {
+            Label("Pair", systemImage: "link.badge.plus")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .disabled(!viewModel.canPairWirelessDevice)
+        .help(viewModel.wirelessPairingHelpText)
+        .namedControl("Pair wireless Android device")
+    }
+
+    private var wirelessConnectionButtons: some View {
+        HStack(spacing: 8) {
+            Button(action: viewModel.connectWirelessDevice) {
+                Label(viewModel.wirelessConnectActionTitle, systemImage: "wifi")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(ReadableBorderedButtonStyle())
+            .disabled(!viewModel.canConnectWirelessDevice)
+            .help(viewModel.wirelessConnectHelpText)
+            .namedControl("Connect wireless Android device")
+
+            Button(action: viewModel.disconnectWirelessDevice) {
+                Label("Disconnect", systemImage: "wifi.slash")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(ReadableBorderedButtonStyle())
+            .disabled(!viewModel.canDisconnectWirelessDevice)
+            .help(viewModel.wirelessDisconnectHelpText)
+            .namedControl("Disconnect wireless Android device")
+        }
+    }
+}
+
+private struct WirelessQRCodeConnectionPanel: View {
+    @ObservedObject var viewModel: AgentViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Scan via QR Code")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Palette.ink)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    generateQRCodeButton
+                    scanDevicesButton
+                    clearQRCodeButton
+                }
+
+                VStack(spacing: 8) {
+                    generateQRCodeButton
+                    scanDevicesButton
+                    clearQRCodeButton
+                }
+            }
+
+            if let qrImage = viewModel.wirelessQRCodeImage {
+                Image(nsImage: qrImage)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 180, minHeight: 150, maxHeight: 180)
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
+                    .accessibilityLabel("Wireless Debugging QR code")
+            }
+
+            if viewModel.hasSelectedWirelessDebuggingDevice || viewModel.canConnectWirelessDevice {
+                Button(action: viewModel.connectWirelessDevice) {
+                    Label(viewModel.wirelessConnectActionTitle, systemImage: "wifi")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(ReadableBorderedButtonStyle())
+                .controlSize(.small)
+                .disabled(!viewModel.canConnectWirelessDevice)
+                .help(viewModel.wirelessConnectHelpText)
+                .namedControl("Connect QR paired wireless Android device")
+            }
+
+            Text(viewModel.wirelessQRCodeStatus)
+                .font(.caption2)
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var generateQRCodeButton: some View {
+        Button(action: viewModel.generateWirelessQRCode) {
+            Label("QR Code", systemImage: "qrcode")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .disabled(!viewModel.canGenerateWirelessQRCode)
+        .help(viewModel.wirelessQRCodeHelpText)
+        .namedControl("Generate wireless debugging QR code")
+    }
+
+    private var scanDevicesButton: some View {
+        Button(action: viewModel.refreshWirelessDebuggingDevices) {
+            Label(viewModel.isRunningWirelessDebugging ? "Scanning" : "Scan", systemImage: "arrow.clockwise")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .disabled(!viewModel.canRefreshWirelessDebuggingDevices)
+        .help(viewModel.wirelessDiscoveryHelpText)
+        .namedControl("Scan wireless devices after QR")
+    }
+
+    private var clearQRCodeButton: some View {
+        Button(action: viewModel.clearWirelessQRCode) {
+            Label("Clear QR", systemImage: "xmark.circle")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .disabled(viewModel.wirelessQRCodeImage == nil)
+        .help(viewModel.wirelessQRCodeImage == nil ? "No QR code is currently shown." : "Hide the generated Wireless Debugging QR code.")
+        .namedControl("Clear wireless debugging QR code")
+    }
+}
+
+private struct DeviceScreenPreviewPanel: View {
+    @ObservedObject var viewModel: AgentViewModel
+    private let imagePadding: CGFloat = 4
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Device Screen")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Palette.muted)
+
+                Spacer(minLength: 0)
+            }
+
+            previewFrame
+
+            Text(viewModel.devicePreviewUpdatedSummary)
+                .font(.caption2)
+                .foregroundStyle(Palette.muted)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(viewModel.devicePreviewUpdatedSummary)
+        }
+    }
+
+    private var previewFrame: some View {
+        GeometryReader { proxy in
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.black)
+
+                if let image = viewModel.devicePreviewImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.medium)
+                        .scaledToFit()
+                        .padding(imagePadding)
+                        .accessibilityLabel("Rendered Android device screen")
+                } else {
+                    VStack(spacing: 7) {
+                        Image(systemName: "iphone.gen3")
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.78))
+                            .accessibilityHidden(true)
+                        Text(viewModel.hasConnectedDevice ? "No frame" : "No target")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Color.white)
+                        Text(viewModel.hasConnectedDevice ? "Waiting for frame" : "Connect a device")
+                            .font(.caption2)
+                            .foregroundStyle(Color.white.opacity(0.72))
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding(12)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onEnded { value in
+                        guard abs(value.translation.width) < 6, abs(value.translation.height) < 6 else { return }
+                        sendTap(at: value.location, in: proxy.size)
+                    }
+            )
+        }
+        .aspectRatio(previewAspectRatio, contentMode: .fit)
+        .frame(maxWidth: .infinity, minHeight: 356)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Palette.border.opacity(0.55), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .layoutPriority(2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Android device screen preview")
+        .help(viewModel.deviceTapHelpText)
+    }
+
+    private var previewAspectRatio: CGFloat {
+        guard let image = viewModel.devicePreviewImage,
+              let size = pixelSize(for: image),
+              size.width > 0,
+              size.height > 0 else {
+            return 9.0 / 20.0
+        }
+        return size.width / size.height
+    }
+
+    private func sendTap(at location: CGPoint, in containerSize: CGSize) {
+        guard viewModel.hasConnectedDevice,
+              let image = viewModel.devicePreviewImage,
+              let imageSize = pixelSize(for: image),
+              imageSize.width > 0,
+              imageSize.height > 0 else {
+            return
+        }
+
+        let imageRect = aspectFitRect(
+            imageSize: imageSize,
+            containerSize: containerSize,
+            padding: imagePadding
+        )
+        guard imageRect.contains(location) else { return }
+
+        let relativeX = (location.x - imageRect.minX) / imageRect.width
+        let relativeY = (location.y - imageRect.minY) / imageRect.height
+        let x = clampedPixel(relativeX * imageSize.width, upperBound: imageSize.width)
+        let y = clampedPixel(relativeY * imageSize.height, upperBound: imageSize.height)
+        DispatchQueue.main.async {
+            viewModel.sendDeviceTap(x: x, y: y)
+        }
+    }
+
+    private func pixelSize(for image: NSImage) -> CGSize? {
+        if let bitmap = image.representations.compactMap({ $0 as? NSBitmapImageRep }).first {
+            return CGSize(width: bitmap.pixelsWide, height: bitmap.pixelsHigh)
+        }
+        return image.size
+    }
+
+    private func aspectFitRect(imageSize: CGSize, containerSize: CGSize, padding: CGFloat) -> CGRect {
+        let availableSize = CGSize(
+            width: max(1, containerSize.width - (padding * 2)),
+            height: max(1, containerSize.height - (padding * 2))
+        )
+        let scale = min(availableSize.width / imageSize.width, availableSize.height / imageSize.height)
+        let displayedSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+        return CGRect(
+            x: padding + ((availableSize.width - displayedSize.width) / 2),
+            y: padding + ((availableSize.height - displayedSize.height) / 2),
+            width: displayedSize.width,
+            height: displayedSize.height
+        )
+    }
+
+    private func clampedPixel(_ value: CGFloat, upperBound: CGFloat) -> Int {
+        let rounded = Int(value.rounded())
+        let maximum = max(0, Int(upperBound.rounded()) - 1)
+        return min(max(0, rounded), maximum)
     }
 }
 
@@ -780,7 +1712,6 @@ private struct ReadableStringDropdown: View {
         }
         .menuStyle(.borderlessButton)
         .buttonStyle(.plain)
-        .colorScheme(.light)
         .disabled(options.isEmpty)
     }
 }
@@ -794,6 +1725,7 @@ private struct ReadableDeviceDropdown: View {
                 viewModel.refreshDevices()
             }
             .disabled(!viewModel.canRefreshDevices)
+            .help(viewModel.refreshDevicesHelpText)
             Divider()
             Button {
                 viewModel.selectedDeviceID = ""
@@ -812,17 +1744,15 @@ private struct ReadableDeviceDropdown: View {
                 title: "Device",
                 value: selectedDeviceTitle,
                 symbol: "iphone.gen3",
-                isEnabled: !viewModel.isRefreshingDevices && !viewModel.isRunningWirelessDebugging
+                isEnabled: viewModel.canSelectDevice
             )
         }
         .menuStyle(.borderlessButton)
         .buttonStyle(.plain)
-        .colorScheme(.light)
     }
 
     private var selectedDeviceTitle: String {
-        guard !viewModel.selectedDeviceID.isEmpty else { return "No device" }
-        return viewModel.devices.first(where: { $0.id == viewModel.selectedDeviceID })?.displayName ?? viewModel.selectedDeviceID
+        viewModel.selectedDeviceDisplayName
     }
 }
 
@@ -843,11 +1773,14 @@ private struct DropdownLabel: View {
                 Text(title)
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(Palette.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text(value)
                     .font(.caption.weight(.semibold))
                     .foregroundColor(Palette.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                    .minimumScaleFactor(0.75)
             }
             Spacer(minLength: 4)
             Image(systemName: "chevron.down")
@@ -857,64 +1790,87 @@ private struct DropdownLabel: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
-        .frame(minWidth: 118, maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 7).fill(isEnabled ? Palette.surface : Palette.inputBackground))
+        .frame(minWidth: 118, maxWidth: .infinity, minHeight: 42, alignment: .leading)
+        .background {
+            SurfaceFill(
+                cornerRadius: 7,
+                tint: isEnabled ? Palette.controlBackground : Palette.inputBackground,
+                material: .ultraThin,
+                textureOpacity: 0.004
+            )
+        }
         .overlay(RoundedRectangle(cornerRadius: 7).stroke(Palette.border))
-        .opacity(isEnabled ? 1 : 0.72)
+        .opacity(isEnabled ? 1 : 0.78)
     }
 }
 
-private struct AssistantModelBindingDropdown: View {
+struct AssistantModelBindingDropdown: View {
     let mode: AssistantModelMode
     @State private var showsModels = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        Button {
-            showsModels.toggle()
-        } label: {
-            DropdownLabel(
-                title: "Models bound to \(mode.title)",
-                value: mode.boundModelSummary,
-                symbol: "cpu",
-                isEnabled: true
-            )
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $showsModels, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 7) {
-                    Image(systemName: "cpu")
-                        .foregroundStyle(Palette.blue)
-                        .accessibilityHidden(true)
-                    Text("\(mode.title) mode bindings")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Palette.ink)
-                    Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(WorkbenchMotion.state(reduceMotion, settings: motionSettings)) {
+                    showsModels.toggle()
                 }
-
-                Text(mode.detail)
-                    .font(.caption2)
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Divider()
-
-                ForEach(mode.boundModels) { model in
-                    AssistantModelBindingRow(model: model)
-                }
-
-                Text("Read-only model bindings. Change the mode above to change routing.")
-                    .font(.caption2)
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
+            } label: {
+                DropdownLabel(
+                    title: showsModels ? "Hide models bound to \(mode.title)" : "Models bound to \(mode.title)",
+                    value: mode.boundModelSummary,
+                    symbol: "cpu",
+                    isEnabled: true
+                )
             }
-            .padding(12)
-            .frame(width: 340)
-            .background(Palette.surface)
+            .buttonStyle(.plain)
+
+            if showsModels {
+                modelBindingDetails
+            }
         }
         .help("Show the models bound to \(mode.title). Model rows are informational only.")
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Models bound to \(mode.title)")
-        .accessibilityHint("Opens a read-only list of models used by this Ask mode.")
+        .accessibilityHint("Shows a read-only inline list of models used by this Ask mode.")
+    }
+
+    private var modelBindingDetails: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "cpu")
+                    .foregroundStyle(Palette.blue)
+                    .accessibilityHidden(true)
+                Text("\(mode.title) mode bindings")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Palette.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                Spacer(minLength: 0)
+            }
+
+            Text(mode.detail)
+                .font(.caption2)
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            ForEach(mode.boundModels) { model in
+                AssistantModelBindingRow(model: model)
+            }
+
+            Text("Read-only model bindings. Change the mode above to change routing.")
+                .font(.caption2)
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background {
+            SurfaceFill(cornerRadius: 8, tint: Palette.surface, material: .ultraThin, textureOpacity: 0.006)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
     }
 }
 
@@ -934,6 +1890,8 @@ private struct AssistantModelBindingRow: View {
                     Text(model.displayName)
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Palette.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     Text(model.provider.rawValue)
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Palette.muted)
@@ -945,10 +1903,13 @@ private struct AssistantModelBindingRow: View {
                 Text(model.modelID)
                     .font(.caption2.monospaced())
                     .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
 
                 Text(model.route)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Palette.ink)
+                    .lineLimit(2)
 
                 Text(model.purpose)
                     .font(.caption2)
@@ -970,51 +1931,36 @@ private struct SidebarFileBrowser: View {
     @ObservedObject var viewModel: AgentViewModel
     @Binding var visiblePanels: Set<ToolWindowPanel>
     @State private var isExpanded = true
+    @State private var showsAllProjectFiles = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        DisclosureGroup(isExpanded: animatedDisclosureBinding($isExpanded, reduceMotion: reduceMotion, settings: motionSettings)) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    TextField("Search files", text: $viewModel.fileSearchQuery)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption)
-                        .disabled(!viewModel.isProjectLoaded)
-                        .namedControl("Search project files", hint: "Filters indexed project files by name or path.")
-                    if !viewModel.fileSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button(action: viewModel.clearFileSearch) {
-                            Image(systemName: "xmark.circle.fill")
-                                .frame(width: 22, height: 22)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Palette.muted)
-                        .help("Clear file search.")
-                        .namedControl("Clear file search", hint: "Clears the current file filter.")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        fileSearchField
+                        clearFileSearchButton
+                    }
+
+                    VStack(spacing: 6) {
+                        fileSearchField
+                        clearFileSearchButton
                     }
                 }
 
-                HStack(spacing: 6) {
-                    Button(action: viewModel.expandAllProjectFolders) {
-                        Label("Expand", systemImage: "plus.square.on.square")
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        fileTreeExpansionButtons
+                        Spacer(minLength: 0)
+                        fileTreeRescanButton
                     }
-                    .disabled(!viewModel.isProjectLoaded)
-                    .help("Expand all folders.")
-                    .namedControl("Expand all project folders")
 
-                    Button(action: viewModel.collapseAllProjectFolders) {
-                        Label("Collapse", systemImage: "minus.square")
+                    VStack(alignment: .leading, spacing: 6) {
+                        fileTreeExpansionButtons
+                        fileTreeRescanButton
                     }
-                    .disabled(!viewModel.isProjectLoaded)
-                    .help("Collapse all folders.")
-                    .namedControl("Collapse all project folders")
-
-                    Spacer(minLength: 0)
-
-                    Button(action: viewModel.scanProject) {
-                        Label("Rescan", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(!viewModel.canScanProject)
-                    .help("Rescan the workspace and refresh the file tree.")
-                    .namedControl("Rescan project files", hint: "Refreshes project analysis and indexed files.")
                 }
                 .buttonStyle(ReadableBorderedButtonStyle())
                 .controlSize(.small)
@@ -1025,6 +1971,8 @@ private struct SidebarFileBrowser: View {
                             .font(.caption2.monospaced())
                             .foregroundStyle(Palette.ink)
                             .lineLimit(2)
+                            .truncationMode(.middle)
+                            .minimumScaleFactor(0.78)
                             .textSelection(.enabled)
                         Text(viewModel.fileSearchSummary)
                             .font(.caption2)
@@ -1033,7 +1981,10 @@ private struct SidebarFileBrowser: View {
                     }
                     .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Palette.inputBackground))
+                    .background {
+                        SurfaceFill(cornerRadius: 8, tint: Palette.inputBackground, material: .ultraThin, textureOpacity: 0.004)
+                    }
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border.opacity(0.34)))
 
                     if viewModel.filteredProjectFiles.isEmpty {
                         EmptyProjectPlaceholder(
@@ -1042,9 +1993,21 @@ private struct SidebarFileBrowser: View {
                             message: viewModel.fileSearchQuery.isEmpty ? "The scan found Android markers but no common Gradle, manifest, Kotlin, Java, or XML files." : "No scanned file matches the current search."
                         )
                     } else {
-                        VStack(spacing: 4) {
-                            ForEach(viewModel.filteredProjectFiles) { item in
+                        LazyVStack(spacing: 4) {
+                            ForEach(visibleProjectFiles) { item in
                                 ProjectFileRow(item: item, viewModel: viewModel, visiblePanels: $visiblePanels)
+                            }
+                            if hiddenProjectFileCount > 0 {
+                                Button {
+                                    showsAllProjectFiles.toggle()
+                                } label: {
+                                    Label(showsAllProjectFiles ? "Show Fewer Files" : "Show \(hiddenProjectFileCount) More", systemImage: showsAllProjectFiles ? "chevron.up.circle" : "chevron.down.circle")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(ReadableBorderedButtonStyle())
+                                .controlSize(.small)
+                                .help(showsAllProjectFiles ? "Collapse the file tree back to the most relevant visible files." : "Show the remaining indexed project files.")
+                                .namedControl(showsAllProjectFiles ? "Show fewer project files" : "Show more project files")
                             }
                         }
                     }
@@ -1062,15 +2025,82 @@ private struct SidebarFileBrowser: View {
         }
     }
 
+    private var fileSearchField: some View {
+        TextField("Search files", text: $viewModel.fileSearchQuery)
+            .workbenchTextField()
+            .font(.caption)
+            .disabled(!viewModel.isProjectLoaded)
+            .help(viewModel.isProjectLoaded ? "Filter indexed project files by name or path." : viewModel.projectPathFeedback.detail)
+            .namedControl("Search project files", hint: "Filters indexed project files by name or path.")
+    }
+
+    @ViewBuilder
+    private var clearFileSearchButton: some View {
+        if !viewModel.fileSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Button(action: viewModel.clearFileSearch) {
+                Image(systemName: "xmark.circle.fill")
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Palette.muted)
+            .help("Clear file search.")
+            .namedControl("Clear file search", hint: "Clears the current file filter.")
+        }
+    }
+
+    private var fileTreeExpansionButtons: some View {
+        HStack(spacing: 6) {
+            Button(action: viewModel.expandAllProjectFolders) {
+                Label("Expand", systemImage: "plus.square.on.square")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(!viewModel.isProjectLoaded)
+            .help(viewModel.isProjectLoaded ? "Expand all folders." : viewModel.projectPathFeedback.detail)
+            .namedControl("Expand all project folders")
+
+            Button(action: viewModel.collapseAllProjectFolders) {
+                Label("Collapse", systemImage: "minus.square")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(!viewModel.isProjectLoaded)
+            .help(viewModel.isProjectLoaded ? "Collapse all folders." : viewModel.projectPathFeedback.detail)
+            .namedControl("Collapse all project folders")
+        }
+    }
+
+    private var fileTreeRescanButton: some View {
+        Button(action: viewModel.scanProject) {
+            Label("Rescan", systemImage: "arrow.clockwise")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.canScanProject)
+        .help(viewModel.canScanProject ? "Rescan the workspace and refresh the file tree." : viewModel.projectPathFeedback.detail)
+        .namedControl("Rescan project files", hint: "Refreshes project analysis and indexed files.")
+    }
+
+    private var visibleProjectFiles: [ProjectFileItem] {
+        guard !showsAllProjectFiles else { return viewModel.filteredProjectFiles }
+        return Array(viewModel.filteredProjectFiles.prefix(14))
+    }
+
+    private var hiddenProjectFileCount: Int {
+        showsAllProjectFiles ? 0 : max(0, viewModel.filteredProjectFiles.count - visibleProjectFiles.count)
+    }
+
 }
 
 private struct SidebarToolList: View {
     @ObservedObject var viewModel: AgentViewModel
     @State private var isExpanded = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        DisclosureGroup(isExpanded: animatedDisclosureBinding($isExpanded, reduceMotion: reduceMotion, settings: motionSettings)) {
             VStack(spacing: 8) {
+                if viewModel.isRunningCommand {
+                    runningCommandStopButton
+                }
                 ForEach(AndroidCommandKind.allCases) { command in
                     SidebarToolRow(command: command, viewModel: viewModel)
                 }
@@ -1086,6 +2116,16 @@ private struct SidebarToolList: View {
             SidebarSectionTitle("Run Tools", symbol: "wrench.and.screwdriver")
         }
     }
+
+    private var runningCommandStopButton: some View {
+        Button(action: viewModel.stopRunningCommand) {
+            Label(viewModel.runningCommandStopTitle, systemImage: "stop.circle.fill")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableProminentButtonStyle(color: Palette.red))
+        .help(viewModel.runningCommandStopHelpText)
+        .namedControl(viewModel.runningCommandStopTitle, hint: viewModel.runningCommandStopHelpText)
+    }
 }
 
 private struct SidebarToolRow: View {
@@ -1096,33 +2136,40 @@ private struct SidebarToolRow: View {
         Button {
             viewModel.runCommand(command)
         } label: {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
                 Image(systemName: command.symbol)
                     .foregroundStyle(Palette.blue)
                     .frame(width: 18)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(command.rawValue)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Palette.ink)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(command.rawValue)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Palette.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
+                        ToolStateBadge(text: stateText, color: stateColor)
+                        Spacer(minLength: 0)
+                    }
                     Text(command.requiresDevice ? "Device Tool" : "Android Tool")
                         .font(.caption2)
                         .foregroundStyle(Palette.muted)
+                        .lineLimit(1)
                     Text(command.shellDescription)
                         .font(.caption2)
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Spacer(minLength: 0)
-
-                ToolStateBadge(text: stateText, color: stateColor)
+                .layoutPriority(1)
             }
             .padding(10)
+            .frame(minHeight: 58)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
+            .background {
+                SurfaceFill(cornerRadius: 8, tint: Palette.surface, material: .ultraThin, textureOpacity: 0.006)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border.opacity(0.72)))
         }
         .buttonStyle(.plain)
         .opacity(viewModel.canRunCommand(command) ? 1 : 0.72)
@@ -1137,7 +2184,7 @@ private struct SidebarToolRow: View {
     private var stateColor: Color {
         switch stateText {
         case "Ready": return Palette.teal
-        case "Confirm": return Palette.amber
+        case "Confirm", "Running": return Palette.amber
         case "Scan first", "Select device", "Set package", "Set activity": return Palette.amber
         default: return Palette.muted
         }
@@ -1158,66 +2205,107 @@ private struct ToolStateBadge: View {
             .foregroundStyle(color)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 6).fill(color.opacity(0.11)))
+            .background {
+                SurfaceFill(cornerRadius: 6, tint: color.opacity(0.10), material: .ultraThin, textureOpacity: 0.003)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(color.opacity(0.18)))
             .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
 private struct MainWorkspaceContentPane: View {
     @ObservedObject var viewModel: AgentViewModel
     @Binding var visiblePanels: Set<ToolWindowPanel>
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
                 StatusInfoBar(viewModel: viewModel)
 
                 if visiblePanels.contains(.projectIntelligence) {
-                    ClosableSectionTitle("Project Intelligence", symbol: "brain.head.profile", panel: .projectIntelligence, visiblePanels: $visiblePanels)
-                    ProjectIntelligenceCard(viewModel: viewModel)
+                    FeatureBoundary {
+                        ClosableSectionTitle("Project Intelligence", symbol: "brain.head.profile", panel: .projectIntelligence, visiblePanels: $visiblePanels)
+                        ProjectIntelligenceCard(viewModel: viewModel)
+                    }
+                    .transition(featureTransition)
                 }
 
                 if visiblePanels.contains(.askAssistant) {
-                    ClosableSectionTitle("Ask The Assistant", symbol: "text.bubble", panel: .askAssistant, visiblePanels: $visiblePanels)
-                    AskAssistantCard(viewModel: viewModel)
+                    FeatureBoundary {
+                        ClosableSectionTitle("Ask The Assistant", symbol: "text.bubble", panel: .askAssistant, visiblePanels: $visiblePanels)
+                        AskAssistantCard(viewModel: viewModel)
+                    }
+                    .transition(featureTransition)
                 }
 
                 if visiblePanels.contains(.commandConsole) {
-                    ClosableSectionTitle("Command Console", symbol: "terminal", panel: .commandConsole, visiblePanels: $visiblePanels)
-                    BuildLogCard(viewModel: viewModel)
+                    FeatureBoundary {
+                        ClosableSectionTitle("Command Console", symbol: "terminal", panel: .commandConsole, visiblePanels: $visiblePanels)
+                        BuildLogCard(viewModel: viewModel)
+                    }
+                    .transition(featureTransition)
                 }
             }
             .padding(22)
+            .animation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings), value: visiblePanels)
         }
-        .background(Palette.workspace)
+        .accessibilityLabel("Assistant feature pane scroll area")
+        .background {
+            PaneBackdrop(role: .workspace)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Assistant feature pane")
         .accessibilityIdentifier("Assistant feature pane")
+    }
+
+    private var featureTransition: AnyTransition {
+        WorkbenchMotion.featureTransition(edge: .trailing, reduceMotion: reduceMotion, settings: motionSettings)
     }
 }
 
 private struct RightToolDockPane: View {
     @ObservedObject var viewModel: AgentViewModel
     @Binding var visiblePanels: Set<ToolWindowPanel>
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
         Group {
             if showsMainFeatures && visiblePanels.contains(.session) {
-                VSplitView {
-                    MainWorkspaceContentPane(viewModel: viewModel, visiblePanels: $visiblePanels)
-                        .frame(minHeight: 300, idealHeight: 430, maxHeight: .infinity)
-                    SessionPane(viewModel: viewModel, visiblePanels: $visiblePanels)
-                        .frame(minHeight: 280, idealHeight: 360, maxHeight: .infinity)
-                }
+                combinedPaneContent
             } else {
                 singlePaneContent
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.inspector)
+        .background {
+            PaneBackdrop(role: .inspector)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Right assistant dock")
         .accessibilityIdentifier("Right assistant dock")
+        .animation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings), value: visiblePanels)
+    }
+
+    @ViewBuilder
+    private var combinedPaneContent: some View {
+        VStack(spacing: 0) {
+            MainWorkspaceContentPane(viewModel: viewModel, visiblePanels: $visiblePanels)
+                .frame(minHeight: 300, maxHeight: .infinity)
+                .clipped()
+                .transition(featureTransition)
+
+            Divider()
+
+            SessionPane(viewModel: viewModel, visiblePanels: $visiblePanels)
+                .frame(minHeight: 240, maxHeight: .infinity)
+                .clipped()
+                .transition(featureTransition)
+        }
     }
 
     @ViewBuilder
@@ -1226,11 +2314,13 @@ private struct RightToolDockPane: View {
             if showsMainFeatures {
                 MainWorkspaceContentPane(viewModel: viewModel, visiblePanels: $visiblePanels)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(featureTransition)
             }
 
             if visiblePanels.contains(.session) {
                 SessionPane(viewModel: viewModel, visiblePanels: $visiblePanels)
                     .frame(maxHeight: .infinity)
+                    .transition(featureTransition)
             }
         }
     }
@@ -1240,6 +2330,10 @@ private struct RightToolDockPane: View {
             || visiblePanels.contains(.askAssistant)
             || visiblePanels.contains(.commandConsole)
     }
+
+    private var featureTransition: AnyTransition {
+        WorkbenchMotion.featureTransition(edge: .trailing, reduceMotion: reduceMotion, settings: motionSettings)
+    }
 }
 
 private struct CenterEditorWorkspace: View {
@@ -1247,10 +2341,14 @@ private struct CenterEditorWorkspace: View {
     @Binding var visiblePanels: Set<ToolWindowPanel>
 
     var body: some View {
-        FileEditorPane(viewModel: viewModel, visiblePanels: $visiblePanels)
+        FeatureBoundary {
+            FileEditorPane(viewModel: viewModel, visiblePanels: $visiblePanels)
+        }
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Palette.workspace)
+            .background {
+                PaneBackdrop(role: .workspace)
+            }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Editor workspace")
             .accessibilityIdentifier("Editor workspace")
@@ -1294,18 +2392,53 @@ private enum EditorCloseTarget: Identifiable {
 
 private struct StatusInfoBar: View {
     @ObservedObject var viewModel: AgentViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            statusHorizontalLayout
+            statusVerticalLayout
+        }
+        .padding(12)
+        .background {
+            SurfaceFill(cornerRadius: 8, tint: Palette.noticeBackground, material: .ultraThin, textureOpacity: 0.006)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border.opacity(0.62)))
+        .accessibilityElement(children: .contain)
+        .animation(WorkbenchMotion.state(reduceMotion, settings: motionSettings), value: viewModel.scanState)
+        .animation(WorkbenchMotion.state(reduceMotion, settings: motionSettings), value: viewModel.isScanningProject)
+        .animation(WorkbenchMotion.state(reduceMotion, settings: motionSettings), value: viewModel.lastStatusMessage)
+    }
+
+    private var statusHorizontalLayout: some View {
+        HStack(alignment: .top, spacing: 10) {
+            statusLeadingContent
+            Spacer(minLength: 10)
+            recommendedActionBlock(horizontalAlignment: .trailing, textAlignment: .trailing)
+        }
+    }
+
+    private var statusVerticalLayout: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            statusLeadingContent
+            recommendedActionBlock(horizontalAlignment: .leading, textAlignment: .leading)
+        }
+    }
+
+    private var statusLeadingContent: some View {
         HStack(alignment: .top, spacing: 10) {
             if viewModel.isScanningProject {
                 ProgressView()
                     .controlSize(.small)
                     .accessibilityLabel("Scanning project")
+                    .transition(WorkbenchMotion.quietTransition(reduceMotion, settings: motionSettings))
             } else {
                 Image(systemName: viewModel.scanState.symbol)
                     .foregroundStyle(shellStatusColor(for: viewModel))
                     .frame(width: 18)
                     .accessibilityHidden(true)
+                    .transition(WorkbenchMotion.quietTransition(reduceMotion, settings: motionSettings))
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -1320,34 +2453,36 @@ private struct StatusInfoBar: View {
                     Text(viewModel.scanProgressSummary)
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(Palette.amber)
+                        .transition(WorkbenchMotion.quietTransition(reduceMotion, settings: motionSettings))
                 }
-            }
-
-            Spacer(minLength: 0)
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(viewModel.workspaceSummary)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(1)
-                Text(viewModel.recommendedActionDetail)
-                    .font(.caption2)
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.trailing)
-                Button(action: viewModel.performRecommendedAction) {
-                    Label(viewModel.recommendedActionTitle, systemImage: "arrow.right.circle")
-                }
-                .buttonStyle(ReadableBorderedButtonStyle())
-                .controlSize(.small)
-                .help(viewModel.recommendedActionDetail)
-                .namedControl("Recommended action: \(viewModel.recommendedActionTitle)")
             }
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.noticeBackground))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
-        .accessibilityElement(children: .contain)
+        .layoutPriority(1)
+    }
+
+    private func recommendedActionBlock(horizontalAlignment: HorizontalAlignment, textAlignment: TextAlignment) -> some View {
+        VStack(alignment: horizontalAlignment, spacing: 4) {
+            Text(viewModel.workspaceSummary)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(Palette.muted)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .minimumScaleFactor(0.75)
+            Text(viewModel.recommendedActionDetail)
+                .font(.caption2)
+                .foregroundStyle(Palette.muted)
+                .lineLimit(2)
+                .multilineTextAlignment(textAlignment)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: viewModel.performRecommendedAction) {
+                Label(viewModel.recommendedActionTitle, systemImage: "arrow.right.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(ReadableBorderedButtonStyle())
+            .controlSize(.small)
+            .help(viewModel.recommendedActionDetail)
+            .namedControl("Recommended action: \(viewModel.recommendedActionTitle)")
+        }
     }
 }
 
@@ -1398,9 +2533,11 @@ private struct ProjectIntelligenceCard: View {
 private struct PlanPreviewDisclosure: View {
     @ObservedObject var viewModel: AgentViewModel
     @State private var isExpanded = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        DisclosureGroup(isExpanded: animatedDisclosureBinding($isExpanded, reduceMotion: reduceMotion, settings: motionSettings)) {
             VStack(alignment: .leading, spacing: 10) {
                 if viewModel.planNeedsRefresh {
                     DiagnosticRowView(row: DiagnosticRow(
@@ -1418,18 +2555,26 @@ private struct PlanPreviewDisclosure: View {
                             .foregroundStyle(.white)
                             .frame(width: 22, height: 22)
                             .background(Circle().fill(planStepColor(step)))
+                            .padding(.top, 1)
                         VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(step.title)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Palette.ink)
-                                ToolStateBadge(text: viewModel.displayState(for: step), color: planStepColor(step))
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    planStepTitle(step)
+                                    ToolStateBadge(text: viewModel.displayState(for: step), color: planStepColor(step))
+                                }
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    planStepTitle(step)
+                                    ToolStateBadge(text: viewModel.displayState(for: step), color: planStepColor(step))
+                                }
                             }
                             Text(step.detail)
                                 .font(.caption2)
                                 .foregroundStyle(Palette.muted)
+                                .lineLimit(3)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
+                        .layoutPriority(1)
                     }
                 }
 
@@ -1438,7 +2583,9 @@ private struct PlanPreviewDisclosure: View {
                     Button(action: { viewModel.generatePlan() }) {
                         Label(viewModel.planNeedsRefresh ? "Refresh Plan" : "Regenerate", systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .namedControl("Regenerate assistant plan", hint: "Refreshes the assistant plan from the current prompt and workspace context.")
+                    .disabled(!viewModel.canGeneratePlan)
+                    .help(viewModel.generatePlanHelpText)
+                    .namedControl("Regenerate assistant plan", hint: viewModel.generatePlanHelpText)
                 }
                 .buttonStyle(ReadableBorderedButtonStyle())
                 .controlSize(.small)
@@ -1459,6 +2606,15 @@ private struct PlanPreviewDisclosure: View {
         default: return Palette.blue
         }
     }
+
+    private func planStepTitle(_ step: AgentPlanStep) -> some View {
+        Text(step.title)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Palette.ink)
+            .lineLimit(2)
+            .minimumScaleFactor(0.8)
+            .fixedSize(horizontal: false, vertical: true)
+    }
 }
 
 private struct FileEditorPane: View {
@@ -1467,19 +2623,23 @@ private struct FileEditorPane: View {
     @State private var pendingCloseTarget: EditorCloseTarget?
     @State private var editorFindQuery = ""
     @State private var editorReplaceText = ""
+    @Namespace private var editorTabSelectionNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
         ContentCard {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    SectionHeader(title: "Editor", symbol: "curlybraces.square")
-                    Spacer()
-                    if viewModel.dirtyEditorDocumentCount > 0 {
-                        StatusPill(
-                            text: "\(viewModel.dirtyEditorDocumentCount) unsaved",
-                            color: Palette.amber,
-                            symbol: "circle.fill"
-                        )
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        SectionHeader(title: "Editor", symbol: "curlybraces.square")
+                        Spacer(minLength: 8)
+                        editorDirtyPill
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        SectionHeader(title: "Editor", symbol: "curlybraces.square")
+                        editorDirtyPill
                     }
                 }
 
@@ -1494,20 +2654,7 @@ private struct FileEditorPane: View {
 
                     if let document = viewModel.selectedEditorDocument {
                         VStack(alignment: .leading, spacing: 8) {
-                            HStack(alignment: .top, spacing: 8) {
-                                Text(document.path)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(Palette.muted)
-                                    .textSelection(.enabled)
-                                    .lineLimit(2)
-                                Spacer(minLength: 0)
-                                Text(editorMetadata(for: document))
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(Palette.teal)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(RoundedRectangle(cornerRadius: 6).fill(Palette.teal.opacity(0.11)))
-                            }
+                            editorDocumentHeader(document)
 
                             if let error = document.lastError {
                                 Text(error)
@@ -1516,33 +2663,7 @@ private struct FileEditorPane: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
 
-                            HStack(spacing: 8) {
-                                TextField("Find in file", text: $editorFindQuery)
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.caption)
-                                    .namedControl("Find in editor file", hint: "Counts matches in the selected editor document.")
-                                TextField("Replace with", text: $editorReplaceText)
-                                    .textFieldStyle(.roundedBorder)
-                                    .font(.caption)
-                                    .namedControl("Replace text in editor file", hint: "Replacement text used by Replace All.")
-                                Text(editorFindSummary(in: document))
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(Palette.muted)
-                                    .frame(minWidth: 74, alignment: .trailing)
-                                Button(action: { viewModel.replaceInSelectedEditorDocument(find: editorFindQuery, replacement: editorReplaceText) }) {
-                                    Label("Replace All", systemImage: "arrow.left.arrow.right")
-                                }
-                                .buttonStyle(ReadableBorderedButtonStyle())
-                                .disabled(editorFindQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                .namedControl("Replace all matches in editor file", hint: "Replaces every case-insensitive match in the selected file.")
-                                Button(action: { editorFindQuery = "" }) {
-                                    Label("Clear", systemImage: "xmark.circle")
-                                }
-                                .buttonStyle(ReadableBorderedButtonStyle())
-                                .disabled(editorFindQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                .namedControl("Clear editor find", hint: "Clears the editor find query.")
-                            }
-                            .controlSize(.small)
+                            editorFindBar(document)
 
                             Text(viewModel.selectedEditorLintSummary)
                                 .font(.caption2)
@@ -1555,85 +2676,14 @@ private struct FileEditorPane: View {
                                 accessibilityLabel: "File editor for \(document.name)"
                             )
                             .frame(minHeight: 380, maxHeight: .infinity)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
+                            .background {
+                                SurfaceFill(cornerRadius: 8, tint: Palette.surface, material: .thin, textureOpacity: 0.004)
+                            }
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(document.lastError == nil ? Palette.border : Palette.red.opacity(0.45)))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                            HStack(spacing: 8) {
-                                Button(action: viewModel.saveSelectedEditorDocument) {
-                                    Label("Save", systemImage: "square.and.arrow.down")
-                                }
-                                .disabled(!document.isDirty)
-                                .keyboardShortcut("s", modifiers: [.command])
-                                .namedControl("Save editor file")
-
-                                Button(action: viewModel.revertSelectedEditorDocument) {
-                                    Label("Revert", systemImage: "arrow.uturn.backward")
-                                }
-                                .disabled(!document.isDirty)
-                                .namedControl("Revert editor file")
-
-                                Button(action: { _ = viewModel.saveAndCloseSelectedEditorDocument(); hideEditorIfEmpty() }) {
-                                    Label("Save & Close", systemImage: "checkmark.square")
-                                }
-                                .disabled(!document.isDirty)
-                                .namedControl("Save and close editor file", hint: "Saves this file, then closes its editor tab.")
-
-                                Button(action: requestCloseSelectedEditorDocument) {
-                                    Label("Close", systemImage: "xmark.circle")
-                                }
-                                .help(document.isDirty ? "Close this editor tab and confirm discarding unsaved changes." : "Close this editor tab.")
-                                .namedControl("Close editor file")
-
-                                Spacer()
-
-                                Button(action: viewModel.saveAllEditorDocuments) {
-                                    Label("Save All", systemImage: "tray.and.arrow.down")
-                                }
-                                .disabled(viewModel.dirtyEditorDocumentCount == 0)
-                                .keyboardShortcut("s", modifiers: [.command, .shift])
-                                .namedControl("Save all editor files")
-
-                                Button(action: requestCloseAllEditorDocuments) {
-                                    Label("Close All", systemImage: "xmark.square")
-                                }
-                                .disabled(viewModel.openEditorDocuments.isEmpty)
-                                .help("Close every open editor tab.")
-                                .namedControl("Close all editor files")
-                            }
-                            .buttonStyle(ReadableBorderedButtonStyle())
-                            .controlSize(.small)
-
-                            HStack(spacing: 8) {
-                                Button(action: viewModel.reloadSelectedEditorDocument) {
-                                    Label("Reload", systemImage: "arrow.clockwise")
-                                }
-                                .namedControl("Reload selected editor file", hint: "Reloads this file from disk.")
-
-                                Button(action: viewModel.formatSelectedEditorDocument) {
-                                    Label("Format", systemImage: "wand.and.stars")
-                                }
-                                .namedControl("Format selected editor file", hint: "Removes trailing whitespace while preserving indentation.")
-
-                                Button(action: viewModel.revealSelectedEditorDocumentInFinder) {
-                                    Label("Reveal", systemImage: "folder")
-                                }
-                                .namedControl("Reveal selected editor file", hint: "Shows this file in Finder.")
-
-                                Button(action: viewModel.openSelectedEditorDocumentExternally) {
-                                    Label("External", systemImage: "arrow.up.right.square")
-                                }
-                                .namedControl("Open selected editor file externally", hint: "Opens this file with the default macOS app.")
-
-                                Button(action: { viewModel.copySelectedEditorPath(absolute: false) }) {
-                                    Label("Copy Path", systemImage: "doc.on.doc")
-                                }
-                                .namedControl("Copy selected editor relative path", hint: "Copies the file path relative to the project.")
-
-                                Spacer()
-                            }
-                            .buttonStyle(ReadableBorderedButtonStyle())
-                            .controlSize(.small)
+                            editorPrimaryActionBar(for: document)
+                            editorSecondaryActionBar
 
                             Text(viewModel.editorStatusSummary)
                                 .font(.caption2)
@@ -1662,8 +2712,308 @@ private struct FileEditorPane: View {
         .accessibilityIdentifier("File editor pane")
     }
 
+    @ViewBuilder
+    private var editorDirtyPill: some View {
+        if viewModel.dirtyEditorDocumentCount > 0 {
+            StatusPill(
+                text: "\(viewModel.dirtyEditorDocumentCount) unsaved",
+                color: Palette.amber,
+                symbol: "circle.fill"
+            )
+        }
+    }
+
+    private func editorDocumentHeader(_ document: EditorDocument) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 8) {
+                editorDocumentPath(document)
+                Spacer(minLength: 8)
+                editorMetadataBadge(document)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                editorDocumentPath(document)
+                editorMetadataBadge(document)
+            }
+        }
+    }
+
+    private func editorDocumentPath(_ document: EditorDocument) -> some View {
+        Text(document.path)
+            .font(.caption.monospaced())
+            .foregroundStyle(Palette.muted)
+            .textSelection(.enabled)
+            .lineLimit(2)
+            .truncationMode(.middle)
+            .minimumScaleFactor(0.78)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func editorMetadataBadge(_ document: EditorDocument) -> some View {
+        Text(editorMetadata(for: document))
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Palette.teal)
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Palette.teal.opacity(0.11)))
+    }
+
+    private func editorFindBar(_ document: EditorDocument) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                editorFindField
+                editorReplaceField
+                editorFindSummaryLabel(document)
+                editorFindActions(document)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                editorFindField
+                editorReplaceField
+                HStack(spacing: 8) {
+                    editorFindSummaryLabel(document)
+                    editorFindActions(document)
+                }
+            }
+        }
+        .controlSize(.small)
+    }
+
+    private var editorFindField: some View {
+        TextField("Find in file", text: $editorFindQuery)
+            .workbenchTextField()
+            .font(.caption)
+            .namedControl("Find in editor file", hint: "Counts matches in the selected editor document.")
+    }
+
+    private var editorReplaceField: some View {
+        TextField("Replace with", text: $editorReplaceText)
+            .workbenchTextField()
+            .font(.caption)
+            .namedControl("Replace text in editor file", hint: "Replacement text used by Replace All.")
+    }
+
+    private func editorFindSummaryLabel(_ document: EditorDocument) -> some View {
+        Text(editorFindSummary(in: document))
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(Palette.muted)
+            .lineLimit(1)
+            .frame(minWidth: 74, alignment: .trailing)
+    }
+
+    private func editorFindActions(_ document: EditorDocument) -> some View {
+        let hasQuery = !editorFindQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let matchCount = editorFindMatchCount(in: document)
+        return HStack(spacing: 8) {
+            Button(action: { viewModel.replaceInSelectedEditorDocument(find: editorFindQuery, replacement: editorReplaceText) }) {
+                Label("Replace All", systemImage: "arrow.left.arrow.right")
+            }
+            .buttonStyle(ReadableBorderedButtonStyle())
+            .disabled(!hasQuery)
+            .help(!hasQuery ? "Enter text to find before replacing." : (matchCount == 0 ? "Run replacement and report if no matches are found." : "Replace all matches in this file."))
+            .namedControl("Replace all matches in editor file", hint: "Replaces every case-insensitive match in the selected file.")
+
+            Button(action: { editorFindQuery = "" }) {
+                Label("Clear", systemImage: "xmark.circle")
+            }
+            .buttonStyle(ReadableBorderedButtonStyle())
+            .namedControl("Clear editor find", hint: "Clears the editor find query.")
+        }
+    }
+
+    private func editorPrimaryActionBar(for document: EditorDocument) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                editorDocumentActions(for: document)
+                Spacer(minLength: 8)
+                editorBulkActions
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                editorDocumentActions(for: document)
+                editorBulkActions
+            }
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .controlSize(.small)
+    }
+
+    private func editorDocumentActions(for document: EditorDocument) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                saveEditorButton(for: document)
+                revertEditorButton(for: document)
+                saveAndCloseEditorButton(for: document)
+                closeEditorButton(for: document)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                saveEditorButton(for: document)
+                revertEditorButton(for: document)
+                saveAndCloseEditorButton(for: document)
+                closeEditorButton(for: document)
+            }
+        }
+    }
+
+    private func saveEditorButton(for document: EditorDocument) -> some View {
+        Button(action: viewModel.saveSelectedEditorDocument) {
+            Label("Save", systemImage: "square.and.arrow.down")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!document.isDirty)
+        .help(document.isDirty ? "Save through scoped diff, secret scan, and undo checkpoint gates." : "No unsaved changes to save.")
+        .keyboardShortcut("s", modifiers: [.command])
+        .namedControl("Save editor file")
+    }
+
+    private func revertEditorButton(for document: EditorDocument) -> some View {
+        Button(action: viewModel.revertSelectedEditorDocument) {
+            Label("Revert", systemImage: "arrow.uturn.backward")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!document.isDirty)
+        .help(document.isDirty ? "Revert this file to the last saved content." : "No unsaved changes to revert.")
+        .namedControl("Revert editor file")
+    }
+
+    private func saveAndCloseEditorButton(for document: EditorDocument) -> some View {
+        Button(action: { _ = viewModel.saveAndCloseSelectedEditorDocument(); hideEditorIfEmpty() }) {
+            Label("Save & Close", systemImage: "checkmark.square")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!document.isDirty)
+        .help(document.isDirty ? "Save this file, then close its editor tab." : "No unsaved changes to save before closing.")
+        .namedControl("Save and close editor file", hint: "Saves this file, then closes its editor tab.")
+    }
+
+    private func closeEditorButton(for document: EditorDocument) -> some View {
+        Button(action: requestCloseSelectedEditorDocument) {
+            Label("Close", systemImage: "xmark.circle")
+                .frame(maxWidth: .infinity)
+        }
+        .help(document.isDirty ? "Close this editor tab and confirm discarding unsaved changes." : "Close this editor tab.")
+        .namedControl("Close editor file")
+    }
+
+    private var editorBulkActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                saveAllEditorButton
+                closeAllEditorButton
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                saveAllEditorButton
+                closeAllEditorButton
+            }
+        }
+    }
+
+    private var saveAllEditorButton: some View {
+        Button(action: viewModel.saveAllEditorDocuments) {
+            Label("Save All", systemImage: "tray.and.arrow.down")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(viewModel.dirtyEditorDocumentCount == 0)
+        .help(viewModel.dirtyEditorDocumentCount == 0 ? "No open editor files have unsaved changes." : "Save all open editor files with unsaved changes.")
+        .keyboardShortcut("s", modifiers: [.command, .shift])
+        .namedControl("Save all editor files")
+    }
+
+    private var closeAllEditorButton: some View {
+        Button(action: requestCloseAllEditorDocuments) {
+            Label("Close All", systemImage: "xmark.square")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(viewModel.openEditorDocuments.isEmpty)
+        .help(viewModel.openEditorDocuments.isEmpty ? "No editor tabs are open." : (viewModel.dirtyEditorDocumentCount == 0 ? "Close every open editor tab." : "Close all editor tabs and confirm discarding unsaved changes."))
+        .namedControl("Close all editor files")
+    }
+
+    private var editorSecondaryActionBar: some View {
+        ViewThatFits(in: .horizontal) {
+            editorDiskActions
+            VStack(alignment: .leading, spacing: 6) {
+                editorDiskActions
+            }
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .controlSize(.small)
+    }
+
+    private var editorDiskActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                reloadEditorButton
+                formatEditorButton
+                revealEditorButton
+                externalEditorButton
+                copyEditorPathButton
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                reloadEditorButton
+                formatEditorButton
+                revealEditorButton
+                externalEditorButton
+                copyEditorPathButton
+            }
+        }
+    }
+
+    private var reloadEditorButton: some View {
+        Button(action: viewModel.reloadSelectedEditorDocument) {
+            Label("Reload", systemImage: "arrow.clockwise")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.hasSelectedEditorFileOnDisk)
+        .help(viewModel.selectedEditorDiskActionHelpText)
+        .namedControl("Reload selected editor file", hint: "Reloads this file from disk.")
+    }
+
+    private var formatEditorButton: some View {
+        Button(action: viewModel.formatSelectedEditorDocument) {
+            Label("Format", systemImage: "wand.and.stars")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.canFormatSelectedEditorDocument)
+        .help(viewModel.selectedEditorFormatHelpText)
+        .namedControl("Format selected editor file", hint: "Removes trailing whitespace while preserving indentation.")
+    }
+
+    private var revealEditorButton: some View {
+        Button(action: viewModel.revealSelectedEditorDocumentInFinder) {
+            Label("Reveal", systemImage: "folder")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.hasSelectedEditorFileOnDisk)
+        .help(viewModel.selectedEditorDiskActionHelpText)
+        .namedControl("Reveal selected editor file", hint: "Shows this file in Finder.")
+    }
+
+    private var externalEditorButton: some View {
+        Button(action: viewModel.openSelectedEditorDocumentExternally) {
+            Label("External", systemImage: "arrow.up.right.square")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.hasSelectedEditorFileOnDisk)
+        .help(viewModel.selectedEditorDiskActionHelpText)
+        .namedControl("Open selected editor file externally", hint: "Opens this file with the default macOS app.")
+    }
+
+    private var copyEditorPathButton: some View {
+        Button(action: { viewModel.copySelectedEditorPath(absolute: false) }) {
+            Label("Copy Path", systemImage: "doc.on.doc")
+                .frame(maxWidth: .infinity)
+        }
+        .namedControl("Copy selected editor relative path", hint: "Copies the file path relative to the project.")
+    }
+
     private var editorTabs: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(viewModel.openEditorDocuments) { document in
                     HStack(spacing: 2) {
@@ -1675,13 +3025,16 @@ private struct FileEditorPane: View {
                                     Text("Edited")
                                         .font(.system(size: 9, weight: .bold))
                                         .foregroundColor(isSelected(document) ? Color.white : Palette.amber)
+                                        .lineLimit(1)
                                 }
                                 Text(document.name)
                                     .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .minimumScaleFactor(0.78)
                                     .foregroundColor(isSelected(document) ? Color.white : Palette.ink)
                             }
                             .font(.caption.weight(.semibold))
-                            .frame(maxWidth: 220, alignment: .leading)
+                            .frame(minWidth: 88, idealWidth: 150, maxWidth: 220, alignment: .leading)
                         }
                         .buttonStyle(.plain)
                         .help(document.path)
@@ -1692,7 +3045,7 @@ private struct FileEditorPane: View {
                         } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: 9, weight: .bold))
-                                .frame(width: 22, height: 22)
+                                .frame(width: 24, height: 24)
                                 .foregroundColor(isSelected(document) ? Color.white : Palette.muted)
                                 .contentShape(Rectangle())
                         }
@@ -1703,10 +3056,15 @@ private struct FileEditorPane: View {
                     .padding(.leading, 9)
                     .padding(.trailing, 5)
                     .padding(.vertical, 6)
-                    .background(
+                    .background {
                         RoundedRectangle(cornerRadius: 7)
-                            .fill(isSelected(document) ? Palette.blue : Palette.inputBackground)
-                    )
+                            .fill(Palette.inputBackground)
+                        if isSelected(document) {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Palette.blue)
+                                .matchedGeometryEffect(id: "editorTabSelection", in: editorTabSelectionNamespace)
+                        }
+                    }
                     .overlay(
                         RoundedRectangle(cornerRadius: 7)
                             .stroke(isSelected(document) ? Palette.blue.opacity(0.75) : Palette.border)
@@ -1714,6 +3072,7 @@ private struct FileEditorPane: View {
                 }
             }
         }
+        .animation(WorkbenchMotion.selection(reduceMotion, settings: motionSettings), value: viewModel.selectedEditorDocument?.path)
     }
 
     private func isSelected(_ document: EditorDocument) -> Bool {
@@ -1734,6 +3093,13 @@ private struct FileEditorPane: View {
     private func editorFindSummary(in document: EditorDocument) -> String {
         let query = editorFindQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return "Find" }
+        let matches = editorFindMatchCount(in: document)
+        return "\(matches) match\(matches == 1 ? "" : "es")"
+    }
+
+    private func editorFindMatchCount(in document: EditorDocument) -> Int {
+        let query = editorFindQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return 0 }
         var matches = 0
         var searchStart = document.content.startIndex
         while searchStart < document.content.endIndex,
@@ -1741,7 +3107,7 @@ private struct FileEditorPane: View {
             matches += 1
             searchStart = range.upperBound
         }
-        return "\(matches) match\(matches == 1 ? "" : "es")"
+        return matches
     }
 
     private var editorContentBinding: Binding<String> {
@@ -1787,7 +3153,9 @@ private struct FileEditorPane: View {
 
     private func hideEditorIfEmpty() {
         if viewModel.openEditorDocuments.isEmpty {
-            visiblePanels.remove(.editor)
+            withAnimation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings)) {
+                _ = visiblePanels.remove(.editor)
+            }
         }
     }
 }
@@ -1806,9 +3174,10 @@ private struct CodeEditor: NSViewRepresentable {
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = false
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .white
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
         scrollView.hasVerticalRuler = true
         scrollView.rulersVisible = true
         scrollView.contentView.postsBoundsChangedNotifications = true
@@ -1817,9 +3186,9 @@ private struct CodeEditor: NSViewRepresentable {
         textView.string = text
         textView.delegate = context.coordinator
         textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        textView.textColor = NSColor(calibratedRed: 0.07, green: 0.09, blue: 0.13, alpha: 1.0)
-        textView.backgroundColor = .white
-        textView.insertionPointColor = NSColor(calibratedRed: 0.15, green: 0.39, blue: 0.92, alpha: 1.0)
+        textView.textColor = .labelColor
+        textView.backgroundColor = .textBackgroundColor
+        textView.insertionPointColor = .controlAccentColor
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -1827,11 +3196,12 @@ private struct CodeEditor: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.usesFindBar = true
         textView.allowsUndo = true
-        textView.textContainerInset = NSSize(width: 10, height: 10)
+        textView.textContainerInset = NSSize(width: 12, height: 12)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.containerSize = NSSize(width: scrollView.contentSize.width, height: .greatestFiniteMagnitude)
         textView.setAccessibilityLabel(accessibilityLabel)
         textView.setAccessibilityIdentifier("File editor")
@@ -1856,6 +3226,12 @@ private struct CodeEditor: NSViewRepresentable {
             context.coordinator.isUpdatingFromSwiftUI = false
         }
         textView.setAccessibilityLabel(accessibilityLabel)
+        textView.textColor = .labelColor
+        textView.backgroundColor = .textBackgroundColor
+        textView.insertionPointColor = .controlAccentColor
+        textView.textContainerInset = NSSize(width: 12, height: 12)
+        textView.textContainer?.lineFragmentPadding = 0
+        scrollView.backgroundColor = .clear
         context.coordinator.applyHighlighting(fileName: fileName)
         context.coordinator.rulerView?.needsDisplay = true
     }
@@ -1887,18 +3263,18 @@ private struct CodeEditor: NSViewRepresentable {
             let text = textView.string as NSString
             let fullRange = NSRange(location: 0, length: text.length)
             let baseFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-            let baseColor = NSColor(calibratedRed: 0.07, green: 0.09, blue: 0.13, alpha: 1.0)
+            let baseColor = NSColor.labelColor
 
             storage.beginEditing()
             storage.setAttributes([.font: baseFont, .foregroundColor: baseColor], range: fullRange)
 
-            apply(pattern: #""([^"\\]|\\.)*"|'([^'\\]|\\.)*'"#, color: NSColor(calibratedRed: 0.64, green: 0.23, blue: 0.09, alpha: 1.0), range: fullRange, storage: storage)
-            apply(pattern: #"//.*"#, color: NSColor(calibratedRed: 0.39, green: 0.45, blue: 0.54, alpha: 1.0), range: fullRange, storage: storage)
-            apply(pattern: #"/\*[\s\S]*?\*/"#, color: NSColor(calibratedRed: 0.39, green: 0.45, blue: 0.54, alpha: 1.0), range: fullRange, storage: storage)
+            apply(pattern: #""([^"\\]|\\.)*"|'([^'\\]|\\.)*'"#, color: .systemOrange, range: fullRange, storage: storage)
+            apply(pattern: #"//.*"#, color: .secondaryLabelColor, range: fullRange, storage: storage)
+            apply(pattern: #"/\*[\s\S]*?\*/"#, color: .secondaryLabelColor, range: fullRange, storage: storage)
 
             if fileName.lowercased().hasSuffix(".xml") {
-                apply(pattern: #"</?[\w:.-]+|/?>"#, color: NSColor(calibratedRed: 0.15, green: 0.39, blue: 0.92, alpha: 1.0), range: fullRange, storage: storage)
-                apply(pattern: #"[\w:.-]+(?=\=)"#, color: NSColor(calibratedRed: 0.06, green: 0.46, blue: 0.43, alpha: 1.0), range: fullRange, storage: storage)
+                apply(pattern: #"</?[\w:.-]+|/?>"#, color: .systemBlue, range: fullRange, storage: storage)
+                apply(pattern: #"[\w:.-]+(?=\=)"#, color: .systemTeal, range: fullRange, storage: storage)
             } else {
                 let keywords = [
                     "android", "break", "case", "catch", "class", "data", "default", "do", "else", "enum",
@@ -1907,8 +3283,8 @@ private struct CodeEditor: NSViewRepresentable {
                     "public", "return", "sealed", "static", "struct", "switch", "true", "try", "val", "var",
                     "void", "when", "while"
                 ].joined(separator: "|")
-                apply(pattern: #"(?<![A-Za-z0-9_])(\#(keywords))(?![A-Za-z0-9_])"#, color: NSColor(calibratedRed: 0.15, green: 0.39, blue: 0.92, alpha: 1.0), range: fullRange, storage: storage)
-                apply(pattern: #"@[A-Za-z_][A-Za-z0-9_]*"#, color: NSColor(calibratedRed: 0.70, green: 0.33, blue: 0.04, alpha: 1.0), range: fullRange, storage: storage)
+                apply(pattern: #"(?<![A-Za-z0-9_])(\#(keywords))(?![A-Za-z0-9_])"#, color: .systemBlue, range: fullRange, storage: storage)
+                apply(pattern: #"@[A-Za-z_][A-Za-z0-9_]*"#, color: .systemOrange, range: fullRange, storage: storage)
             }
 
             storage.endEditing()
@@ -1923,6 +3299,7 @@ private struct CodeEditor: NSViewRepresentable {
             }
         }
     }
+
 }
 
 private final class CodeLineNumberRulerView: NSRulerView {
@@ -1932,7 +3309,7 @@ private final class CodeLineNumberRulerView: NSRulerView {
         self.textView = textView
         super.init(scrollView: textView.enclosingScrollView, orientation: .verticalRuler)
         clientView = textView
-        ruleThickness = 48
+        ruleThickness = 44
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(needsDisplayForTextViewScroll),
@@ -1950,8 +3327,13 @@ private final class CodeLineNumberRulerView: NSRulerView {
     }
 
     override func drawHashMarksAndLabels(in rect: NSRect) {
-        NSColor(calibratedRed: 0.96, green: 0.97, blue: 0.98, alpha: 1.0).setFill()
+        NSColor.controlBackgroundColor.withAlphaComponent(0.78).setFill()
         bounds.fill()
+        NSColor.separatorColor.withAlphaComponent(0.72).setStroke()
+        NSBezierPath.strokeLine(
+            from: NSPoint(x: bounds.maxX - 0.5, y: bounds.minY),
+            to: NSPoint(x: bounds.maxX - 0.5, y: bounds.maxY)
+        )
 
         guard
             let textView,
@@ -1959,14 +3341,15 @@ private final class CodeLineNumberRulerView: NSRulerView {
             let textContainer = textView.textContainer
         else { return }
 
-        let visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: textView.visibleRect, in: textContainer)
+        let visibleRect = textView.visibleRect
+        let visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
         let text = textView.string as NSString
         let textContainerOrigin = textView.textContainerOrigin
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .right
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
-            .foregroundColor: NSColor(calibratedRed: 0.39, green: 0.45, blue: 0.54, alpha: 1.0),
+            .foregroundColor: NSColor.secondaryLabelColor,
             .paragraphStyle: paragraphStyle
         ]
 
@@ -1976,7 +3359,7 @@ private final class CodeLineNumberRulerView: NSRulerView {
             let lineString = "\(lineNumber)" as NSString
             let drawRect = NSRect(
                 x: 4,
-                y: usedRect.minY + textContainerOrigin.y + 1,
+                y: usedRect.minY + textContainerOrigin.y - visibleRect.minY + 1,
                 width: self.ruleThickness - 10,
                 height: usedRect.height
             )
@@ -1989,325 +3372,10 @@ private final class CodeLineNumberRulerView: NSRulerView {
     }
 }
 
-private struct AskAssistantCard: View {
-    @ObservedObject var viewModel: AgentViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 8) {
-                Label(viewModel.promptContextSummary, systemImage: viewModel.planNeedsRefresh ? "exclamationmark.triangle" : "scope")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(viewModel.planNeedsRefresh ? Palette.amber : Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Text(viewModel.promptMetricsSummary)
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(Palette.muted)
-            }
-
-            modelRouteSurface
-
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $viewModel.prompt)
-                    .font(.system(size: 14, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Palette.ink)
-                    .tint(Palette.blue)
-                    .colorScheme(.light)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 104)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
-                    .help("Describe the Android development task for the plan.")
-                    .namedControl("Agent prompt")
-
-                if viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("Describe the Android task, crash, UI change, test gap, or release check.")
-                        .font(.system(size: 14, weight: .regular, design: .monospaced))
-                    .foregroundStyle(Palette.muted)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 16)
-                    .allowsHitTesting(false)
-                }
-            }
-
-            assistantResponseSurface
-
-            ViewThatFits(in: .horizontal) {
-                promptToolbar
-                VStack(alignment: .leading, spacing: 8) {
-                    promptToolbar
-                }
-            }
-            .controlSize(.small)
-        }
-    }
-
-    private var modelRouteSurface: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .center, spacing: 8) {
-                Label(viewModel.assistantModelRouteSummary, systemImage: viewModel.isAssistantThinking ? "cpu.fill" : "cpu")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(viewModel.isAssistantThinking ? Palette.amber : Palette.ink)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Spacer(minLength: 0)
-                Picker("AI mode", selection: $viewModel.assistantModelMode) {
-                    ForEach(AssistantModelMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 250)
-                .namedControl("Assistant model mode", hint: "Selects the Ask routing mode.")
-            }
-
-            AssistantModelBindingDropdown(mode: viewModel.assistantModelMode)
-                .namedControl("Bound assistant models", hint: "Shows the models bound to the selected Ask mode. The model rows are read-only.")
-
-            Text(viewModel.taskDroidRouteSummary)
-                .font(.caption2)
-                .foregroundStyle(Palette.muted)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if !viewModel.assistantModelDetail.isEmpty {
-                Text(viewModel.assistantModelDetail)
-                    .font(.caption2)
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(2)
-                    .truncationMode(.middle)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(9)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.noticeBackground))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
-    }
-
-    @ViewBuilder
-    private var assistantResponseSurface: some View {
-        let response = viewModel.assistantResponse.trimmingCharacters(in: .whitespacesAndNewlines)
-        let actions = viewModel.assistantActionSummary.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !response.isEmpty || !actions.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                assistantResponseHeader(hasResponse: !response.isEmpty, hasActions: !actions.isEmpty)
-
-                if !response.isEmpty {
-                    ScrollView(.vertical, showsIndicators: true) {
-                        Text(response)
-                            .font(.caption)
-                            .foregroundStyle(Palette.ink)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                            .padding(10)
-                    }
-                    .frame(minHeight: 92, maxHeight: 180)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
-                    .namedControl("Assistant response", hint: "Shows the project-specific answer generated from the current prompt.")
-                }
-
-                if !actions.isEmpty {
-                    Label(actions, systemImage: "bolt.circle")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Palette.teal)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.teal.opacity(0.10)))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.teal.opacity(0.35)))
-                        .namedControl("Assistant automatic actions")
-                }
-
-                if !viewModel.assistantResponseExportAvailabilityMessage.isEmpty {
-                    Text(viewModel.assistantResponseExportAvailabilityMessage)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Palette.amber)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private func assistantResponseHeader(hasResponse: Bool, hasActions: Bool) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
-                assistantResponseTitle
-                Spacer(minLength: 8)
-                assistantResponseHeaderControls(hasResponse: hasResponse, hasActions: hasActions)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                assistantResponseTitle
-                assistantResponseHeaderControls(hasResponse: hasResponse, hasActions: hasActions)
-            }
-        }
-    }
-
-    private var assistantResponseTitle: some View {
-        Label("Assistant Response", systemImage: "text.bubble.fill")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Palette.ink)
-    }
-
-    @ViewBuilder
-    private func assistantResponseHeaderControls(hasResponse: Bool, hasActions: Bool) -> some View {
-        if hasResponse {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) {
-                    assistantResponseInlineActions
-                    if !viewModel.assistantResponseFeedback.isEmpty {
-                        assistantResponseFeedbackBadge
-                    }
-                    if hasActions {
-                        assistantActedBadge
-                    }
-                }
-
-                HStack(spacing: 6) {
-                    assistantResponseActionsMenu
-                    if !viewModel.assistantResponseFeedback.isEmpty {
-                        assistantResponseFeedbackBadge
-                    }
-                    if hasActions {
-                        assistantActedBadge
-                    }
-                }
-            }
-        } else if hasActions {
-            assistantActedBadge
-        }
-    }
-
-    @ViewBuilder
-    private var assistantResponseInlineActions: some View {
-        Button(action: viewModel.copyAssistantResponse) {
-            Label("Copy Response", systemImage: "doc.on.doc")
-        }
-        .buttonStyle(ReadableBorderedButtonStyle())
-        .controlSize(.small)
-        .help("Copy the generated assistant response.")
-        .namedControl("Copy assistant response", hint: "Copies the generated assistant response to the clipboard.")
-
-        Button(action: viewModel.exportAssistantResponse) {
-            Label("Export Response", systemImage: "square.and.arrow.down")
-        }
-        .buttonStyle(ReadableBorderedButtonStyle())
-        .controlSize(.small)
-        .help("Export the generated assistant response as a text file.")
-        .namedControl("Export assistant response", hint: "Writes the generated assistant response to a temporary text file.")
-
-        if !viewModel.assistantResponseExportPath.isEmpty {
-            Button(action: viewModel.copyAssistantResponseExportPath) {
-                Label("Copy Path", systemImage: "link")
-            }
-            .buttonStyle(ReadableBorderedButtonStyle())
-            .controlSize(.small)
-            .disabled(!viewModel.hasAssistantResponseExportFile)
-            .help("Copy the exported assistant response path.")
-            .namedControl("Copy assistant response export path", hint: "Copies the exported assistant response file path to the clipboard.")
-
-            Button(action: viewModel.needsAskExportRecoveryAction ? viewModel.exportAssistantResponse : viewModel.openAssistantResponseExport) {
-                Label(
-                    viewModel.needsAskExportRecoveryAction ? "Re-export" : "Open Export",
-                    systemImage: viewModel.needsAskExportRecoveryAction ? "arrow.clockwise.circle" : "arrow.up.right.square"
-                )
-            }
-            .buttonStyle(ReadableBorderedButtonStyle())
-            .controlSize(.small)
-            .disabled(viewModel.needsAskExportRecoveryAction ? viewModel.assistantResponse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : !viewModel.hasAssistantResponseExportFile)
-            .help(viewModel.needsAskExportRecoveryAction ? "Export the assistant response again because the previous export path is stale." : "Open the exported assistant response.")
-            .namedControl(viewModel.needsAskExportRecoveryAction ? "Re-export assistant response" : "Open assistant response export", hint: viewModel.needsAskExportRecoveryAction ? "Recreates the assistant response export file at a fresh path." : "Opens the exported assistant response text file.")
-        }
-    }
-
-    private var assistantResponseActionsMenu: some View {
-        Menu {
-            Button(action: viewModel.copyAssistantResponse) {
-                Label("Copy Response", systemImage: "doc.on.doc")
-            }
-            Button(action: viewModel.exportAssistantResponse) {
-                Label("Export Response", systemImage: "square.and.arrow.down")
-            }
-            if !viewModel.assistantResponseExportPath.isEmpty {
-                Button(action: viewModel.copyAssistantResponseExportPath) {
-                    Label("Copy Path", systemImage: "link")
-                }
-                .disabled(!viewModel.hasAssistantResponseExportFile)
-                Button(action: viewModel.needsAskExportRecoveryAction ? viewModel.exportAssistantResponse : viewModel.openAssistantResponseExport) {
-                    Label(
-                        viewModel.needsAskExportRecoveryAction ? "Re-export" : "Open Export",
-                        systemImage: viewModel.needsAskExportRecoveryAction ? "arrow.clockwise.circle" : "arrow.up.right.square"
-                    )
-                }
-                .disabled(viewModel.needsAskExportRecoveryAction ? viewModel.assistantResponse.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : !viewModel.hasAssistantResponseExportFile)
-            }
-        } label: {
-            HighContrastMenuLabel(title: "Actions", symbol: "ellipsis.circle")
-        }
-        .buttonStyle(.plain)
-        .colorScheme(.light)
-        .controlSize(.small)
-        .help("Open assistant response actions.")
-        .namedControl("Assistant response actions", hint: "Shows copy, export, and open actions for the assistant response.")
-    }
-
-    private var assistantActedBadge: some View {
-        Label("Acted", systemImage: "bolt.fill")
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(Palette.teal)
-    }
-
-    private var assistantResponseFeedbackBadge: some View {
-        Text(viewModel.assistantResponseFeedback)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(Palette.teal)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Palette.teal.opacity(0.12)))
-    }
-
-    private var promptToolbar: some View {
-        HStack(spacing: 8) {
-            PromptHistoryMenu(viewModel: viewModel)
-            Button(action: viewModel.clearPrompt) {
-                Label("Clear", systemImage: "xmark.circle")
-            }
-            .buttonStyle(ReadableBorderedButtonStyle())
-            .disabled(viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .help("Clear the prompt and keep the previous text in history.")
-            .namedControl("Clear prompt")
-            Button(action: viewModel.restorePreviousPromptDraft) {
-                Label("Undo", systemImage: "arrow.uturn.backward")
-            }
-            .buttonStyle(ReadableBorderedButtonStyle())
-            .help("Restore the previous prompt draft after a preset, history restore, or clear.")
-            .namedControl("Restore previous prompt draft", hint: "Swaps the prompt with the previous draft.")
-            Spacer()
-            Button(action: { viewModel.askAssistant() }) {
-                Label(viewModel.isAssistantThinking ? "Thinking" : (viewModel.planNeedsRefresh ? "Refresh Response" : "Ask"), systemImage: viewModel.isAssistantThinking ? "cpu" : "paperplane")
-            }
-            .buttonStyle(ReadableProminentButtonStyle(color: Palette.teal))
-            .disabled(
-                viewModel.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    || viewModel.isScanningProject
-                    || viewModel.isRunningCommand
-                    || viewModel.isRefreshingDevices
-                    || viewModel.isRunningWirelessDebugging
-                    || viewModel.isAssistantThinking
-            )
-            .help("Ask the assistant for a project-specific response and run safe automatic actions requested by the prompt.")
-            .keyboardShortcut(.return, modifiers: [.command])
-            .namedControl("Ask the assistant")
-        }
-    }
-}
-
 private struct BuildLogCard: View {
     @ObservedObject var viewModel: AgentViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -2320,87 +3388,60 @@ private struct BuildLogCard: View {
                         Text("\(summary.title) - \(summary.status) in \(summary.duration)")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Palette.ink)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.82)
                         Text(summary.detail)
                             .font(.caption)
                             .foregroundStyle(Palette.muted)
+                            .lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                    .layoutPriority(1)
                 }
                 .padding(10)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
+                .background {
+                    SurfaceFill(cornerRadius: 8, tint: Palette.surface, material: .ultraThin, textureOpacity: 0.006)
+                }
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border.opacity(0.66)))
+                .transition(WorkbenchMotion.quietTransition(reduceMotion, settings: motionSettings))
             }
 
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    Label("Console", systemImage: "terminal")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Palette.ink)
-                    HStack(spacing: 2) {
-                        ForEach(ConsoleStreamFilter.allCases) { filter in
-                            Button {
-                                viewModel.consoleStreamFilter = filter
-                            } label: {
-                                Text(filter.rawValue)
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(viewModel.consoleStreamFilter == filter ? Color.white : Palette.ink)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 4)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(viewModel.consoleStreamFilter == filter ? Palette.blue : Palette.surface)
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                            .namedControl("Show console \(filter.rawValue)", hint: "Filters the console to \(filter.rawValue).")
-                        }
-                    }
-                    .padding(2)
-                    .background(RoundedRectangle(cornerRadius: 7).fill(Palette.inputBackground))
-                    TextField("Filter output", text: $viewModel.consoleSearchQuery)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.caption)
-                        .frame(maxWidth: 220)
-                        .namedControl("Filter command console", hint: "Filters console output by line.")
-                    if !viewModel.consoleSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button(action: viewModel.clearConsoleSearch) {
-                            Image(systemName: "xmark.circle.fill")
-                                .frame(width: 22, height: 22)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(Palette.muted)
-                        .help("Clear console filter.")
-                        .namedControl("Clear console filter", hint: "Shows the full console output.")
-                    }
-                    Spacer()
-                    Text(consoleMetadata)
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(Palette.muted)
-                }
+                consoleHeader
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(Palette.inputBackground)
 
                 Divider()
 
-                ScrollView(.vertical, showsIndicators: true) {
-                    Text(viewModel.filteredCommandOutput.isEmpty ? "Command output appears here after Gradle, ADB, Logcat, or packaging commands run." : viewModel.filteredCommandOutput)
+                ScrollView(.vertical, showsIndicators: false) {
+                    let consoleOutput = viewModel.filteredCommandOutput.isEmpty ? "Command output appears here after Gradle, ADB, Logcat, or packaging commands run." : viewModel.filteredCommandOutput
+                    Text(consoleOutput)
                         .font(.system(size: 13, weight: .regular, design: .monospaced))
                         .foregroundStyle(Palette.ink)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(10)
+                        .accessibilityHidden(true)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Command console output")
+                .accessibilityValue(Text(accessibilityLongTextSummary(viewModel.filteredCommandOutput.isEmpty ? "Command output appears here after Gradle, ADB, Logcat, or packaging commands run." : viewModel.filteredCommandOutput)))
+                .accessibilityHint("Shows command output with the current console filter applied.")
+                .accessibilityIdentifier("Command console output")
             }
             .frame(minHeight: 220)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
+            .background {
+                SurfaceFill(cornerRadius: 8, tint: Palette.surface, material: .thin, textureOpacity: 0.006)
+            }
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border.opacity(0.68)))
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             if viewModel.isOutputTruncated {
                 Text("Older console output was truncated after 80,000 characters. Export the log before running another long command.")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Palette.amber)
+                    .transition(WorkbenchMotion.quietTransition(reduceMotion, settings: motionSettings))
             }
 
             ViewThatFits(in: .horizontal) {
@@ -2412,6 +3453,9 @@ private struct BuildLogCard: View {
             .buttonStyle(ReadableBorderedButtonStyle())
             .controlSize(.small)
         }
+        .animation(WorkbenchMotion.state(reduceMotion, settings: motionSettings), value: viewModel.lastCommandSummary)
+        .animation(WorkbenchMotion.state(reduceMotion, settings: motionSettings), value: viewModel.isOutputTruncated)
+        .animation(WorkbenchMotion.state(reduceMotion, settings: motionSettings), value: viewModel.isRunningCommand)
     }
 
     private func summaryColor(_ summary: CommandRunSummary) -> Color {
@@ -2438,50 +3482,240 @@ private struct BuildLogCard: View {
         return "\(viewModel.consoleStreamFilter.rawValue.lowercased()) · \(lineCount) lines\(filtered)"
     }
 
-    private var consoleToolbar: some View {
-        HStack(spacing: 8) {
-            Spacer()
-            if viewModel.isRunningCommand {
-                Button(action: viewModel.stopRunningCommand) {
-                    Label("Stop", systemImage: "stop.circle")
+    private var consoleHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                consoleTitle
+                consoleFilterGroup
+                consoleSearchControl
+                Spacer(minLength: 8)
+                consoleMetadataLabel
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    consoleTitle
+                    Spacer(minLength: 8)
+                    consoleMetadataLabel
                 }
-                .namedControl("Stop running command")
+                consoleFilterGroup
+                consoleSearchControl
             }
-            Button(action: viewModel.copyConsole) {
-                Label("Copy Log", systemImage: "doc.on.doc")
-            }
-            .disabled(viewModel.commandOutput.isEmpty)
-            .namedControl("Copy command console")
-            Button(action: viewModel.copyLastCommandPreview) {
-                Label("Copy Cmd", systemImage: "terminal")
-            }
-            .namedControl("Copy last command", hint: "Copies the most recent runnable command.")
-            Button(action: viewModel.retryLastCommand) {
-                Label("Retry", systemImage: "arrow.clockwise")
-            }
-            .disabled(viewModel.isRunningCommand)
-            .namedControl("Retry last command", hint: "Runs the previous command again if it is still valid.")
-            Button(action: viewModel.exportConsole) {
-                Label("Export", systemImage: "square.and.arrow.down")
-            }
-            .disabled(viewModel.commandOutput.isEmpty)
-            .namedControl("Export command console")
-            if !viewModel.lastExportPath.isEmpty {
-                Button(action: viewModel.openLastExport) {
-                    Label("Open Export", systemImage: "arrow.up.right.square")
-                }
-                .namedControl("Open last export")
-            }
-            Button(action: viewModel.createDebugReport) {
-                Label("Debug Report", systemImage: "doc.text")
-            }
-            .namedControl("Create debug report")
-            Button(action: viewModel.clearOutput) {
-                Label("Clear", systemImage: "trash")
-            }
-            .disabled(viewModel.commandOutput.isEmpty)
-            .namedControl("Clear command console")
         }
+    }
+
+    private var consoleTitle: some View {
+        Label("Console", systemImage: "terminal")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Palette.ink)
+            .lineLimit(1)
+    }
+
+    private var consoleFilterGroup: some View {
+        HStack(spacing: 2) {
+            ForEach(ConsoleStreamFilter.allCases) { filter in
+                Button {
+                    viewModel.consoleStreamFilter = filter
+                } label: {
+                    Text(filter.rawValue)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(viewModel.consoleStreamFilter == filter ? Color.white : Palette.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(viewModel.consoleStreamFilter == filter ? Palette.blue : Palette.surface)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.commandOutput.isEmpty)
+                .help(viewModel.commandOutput.isEmpty ? "Run a command before filtering console output." : "Show \(filter.rawValue) console output.")
+                .namedControl("Show console \(filter.rawValue)", hint: "Filters the console to \(filter.rawValue).")
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Palette.inputBackground))
+    }
+
+    private var consoleSearchControl: some View {
+        HStack(spacing: 6) {
+            TextField("Filter output", text: $viewModel.consoleSearchQuery)
+                .workbenchTextField()
+                .font(.caption)
+                .frame(minWidth: 120, idealWidth: 180, maxWidth: 220)
+                .disabled(viewModel.commandOutput.isEmpty)
+                .help(viewModel.commandOutput.isEmpty ? "Run a command before filtering console output." : "Filter console output by line.")
+                .namedControl("Filter command console", hint: "Filters console output by line.")
+            if !viewModel.consoleSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button(action: viewModel.clearConsoleSearch) {
+                    Image(systemName: "xmark.circle.fill")
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Palette.muted)
+                .help("Clear console filter.")
+                .namedControl("Clear console filter", hint: "Shows the full console output.")
+            }
+        }
+    }
+
+    private var consoleMetadataLabel: some View {
+        Text(consoleMetadata)
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(Palette.muted)
+            .lineLimit(1)
+            .minimumScaleFactor(0.78)
+    }
+
+    private var consoleToolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                consoleExecutionActions
+                consoleExportActions
+                consoleClearAction
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                consoleExecutionActions
+                consoleExportActions
+                consoleClearAction
+            }
+        }
+    }
+
+    private var consoleExecutionActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                if viewModel.isRunningCommand {
+                    stopCommandButton
+                }
+                copyConsoleButton
+                copyLastCommandButton
+                retryCommandButton
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                if viewModel.isRunningCommand {
+                    stopCommandButton
+                }
+                copyConsoleButton
+                copyLastCommandButton
+                retryCommandButton
+            }
+        }
+    }
+
+    private var stopCommandButton: some View {
+        Button(action: viewModel.stopRunningCommand) {
+            Label("Stop", systemImage: "stop.circle")
+                .frame(maxWidth: .infinity)
+        }
+        .help("Stop the currently running command.")
+        .namedControl("Stop running command")
+    }
+
+    private var copyConsoleButton: some View {
+        Button(action: viewModel.copyConsole) {
+            Label("Copy Log", systemImage: "doc.on.doc")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(viewModel.commandOutput.isEmpty)
+        .help("Copies the currently visible console output, including active stream and search filters.")
+        .namedControl("Copy command console", hint: "Copies the currently visible console output, including active stream and search filters.")
+    }
+
+    private var copyLastCommandButton: some View {
+        Button(action: viewModel.copyLastCommandPreview) {
+            Label("Copy Cmd", systemImage: "terminal")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.hasRunnableCommandHistory)
+        .help(viewModel.hasRunnableCommandHistory ? "Copy the most recent runnable command." : "Run a command before copying its preview.")
+        .namedControl("Copy last command", hint: "Copies the most recent runnable command.")
+    }
+
+    private var retryCommandButton: some View {
+        Button(action: viewModel.retryLastCommand) {
+            Label("Retry", systemImage: "arrow.clockwise")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.canRetryLastCommand)
+        .help(viewModel.hasRunnableCommandHistory ? "Run the previous command again if it is still valid." : "Run a command before retrying.")
+        .namedControl("Retry last command", hint: "Runs the previous command again if it is still valid.")
+    }
+
+    private var consoleExportActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                exportConsoleButton
+                if !viewModel.lastExportPath.isEmpty {
+                    openLastExportButton
+                    if !viewModel.lastExportAvailabilityMessage.isEmpty {
+                        exportMissingLabel
+                    }
+                }
+                debugReportButton
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                exportConsoleButton
+                if !viewModel.lastExportPath.isEmpty {
+                    openLastExportButton
+                    if !viewModel.lastExportAvailabilityMessage.isEmpty {
+                        exportMissingLabel
+                    }
+                }
+                debugReportButton
+            }
+        }
+    }
+
+    private var exportConsoleButton: some View {
+        Button(action: viewModel.exportConsole) {
+            Label(viewModel.isConsoleViewFiltered ? "Export Full" : "Export", systemImage: "square.and.arrow.down")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(viewModel.commandOutput.isEmpty)
+        .help(viewModel.consoleExportHelpText)
+        .namedControl("Export command console", hint: viewModel.consoleExportHelpText)
+    }
+
+    private var openLastExportButton: some View {
+        Button(action: viewModel.openLastExport) {
+            Label("Open Export", systemImage: "arrow.up.right.square")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.hasLastExportFile)
+        .help(viewModel.lastExportAvailabilityMessage.isEmpty ? "Open the most recent \(viewModel.lastExportSourceTitle.lowercased()) export file." : viewModel.lastExportAvailabilityMessage)
+        .namedControl("Open last export")
+    }
+
+    private var exportMissingLabel: some View {
+        Label("Export missing", systemImage: "exclamationmark.triangle")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Palette.amber)
+            .help(viewModel.lastExportAvailabilityMessage)
+    }
+
+    private var debugReportButton: some View {
+        Button(action: viewModel.createDebugReport) {
+            Label("Debug Report", systemImage: "doc.text")
+                .frame(maxWidth: .infinity)
+        }
+        .help("Export a diagnostics report with project, device, command, and console context.")
+        .namedControl("Create debug report")
+    }
+
+    private var consoleClearAction: some View {
+        Button(action: viewModel.clearOutput) {
+            Label("Clear", systemImage: "trash")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(viewModel.commandOutput.isEmpty)
+        .help(viewModel.commandOutput.isEmpty ? "No console output to clear." : "Clear the command console output.")
+        .namedControl("Clear command console")
     }
 }
 
@@ -2494,6 +3728,8 @@ private struct SessionPane: View {
             Text("Session")
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Palette.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
 
@@ -2513,12 +3749,23 @@ private struct SessionPane: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
         }
-        .background(Palette.inspector)
+        .background {
+            SurfaceFill(cornerRadius: 8, tint: Palette.inspector, material: .thin, textureOpacity: 0.012)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Palette.featureBorder, lineWidth: 1.35)
+        )
+        .padding(10)
     }
 }
 
 private struct SessionTabStrip: View {
     @Binding var selection: SessionPaneTab
+    @Namespace private var selectionNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
         HStack(spacing: 6) {
@@ -2536,12 +3783,18 @@ private struct SessionTabStrip: View {
                     }
                     .foregroundColor(selection == tab ? Color.white : Palette.ink)
                     .frame(maxWidth: .infinity)
+                    .frame(minHeight: 30)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 7)
-                    .background(
+                    .background {
                         RoundedRectangle(cornerRadius: 7)
-                            .fill(selection == tab ? Palette.blue : Palette.surface)
-                    )
+                            .fill(Palette.surface)
+                        if selection == tab {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(Palette.blue)
+                                .matchedGeometryEffect(id: "sessionSelection", in: selectionNamespace)
+                        }
+                    }
                     .overlay(
                         RoundedRectangle(cornerRadius: 7)
                             .stroke(selection == tab ? Palette.blue.opacity(0.65) : Palette.border)
@@ -2554,6 +3807,7 @@ private struct SessionTabStrip: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Session tabs")
+        .animation(WorkbenchMotion.selection(reduceMotion, settings: motionSettings), value: selection)
     }
 }
 
@@ -2580,8 +3834,8 @@ private struct SessionChatTab: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            ScrollView {
-                VStack(spacing: 10) {
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 10) {
                     ForEach(viewModel.chatMessages) { message in
                         ChatBubble(message: message)
                     }
@@ -2589,13 +3843,24 @@ private struct SessionChatTab: View {
                 .padding(.top, 8)
             }
 
-            HStack(spacing: 8) {
-                StatusPill(text: viewModel.scanState.title, color: shellStatusColor(for: viewModel), symbol: viewModel.scanState.symbol)
-                if viewModel.isProjectLoaded {
-                    StatusPill(text: viewModel.profile.packageName, color: Palette.blue, symbol: "shippingbox")
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    sessionStatusPills
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    sessionStatusPills
+                }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var sessionStatusPills: some View {
+        StatusPill(text: viewModel.scanState.title, color: shellStatusColor(for: viewModel), symbol: viewModel.scanState.symbol)
+        if viewModel.isProjectLoaded {
+            StatusPill(text: viewModel.profile.packageName, color: Palette.blue, symbol: "shippingbox")
         }
     }
 }
@@ -2603,46 +3868,47 @@ private struct SessionChatTab: View {
 private struct SessionDiagnosticsTab: View {
     @ObservedObject var viewModel: AgentViewModel
     @Binding var visiblePanels: Set<ToolWindowPanel>
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workbenchMotionSettings) private var motionSettings
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 ContentCard {
                     VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            SectionHeader(title: "Diagnostics", symbol: "stethoscope")
-                            Spacer()
-                            Button(action: viewModel.createDebugReport) {
-                                Label("Report", systemImage: "doc.text")
+                        ViewThatFits(in: .horizontal) {
+                            HStack {
+                                SectionHeader(title: "Diagnostics", symbol: "stethoscope")
+                                Spacer(minLength: 8)
+                                diagnosticsReportButton
                             }
-                            .buttonStyle(ReadableBorderedButtonStyle())
-                            .controlSize(.small)
-                            .namedControl("Create diagnostics report")
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                SectionHeader(title: "Diagnostics", symbol: "stethoscope")
+                                diagnosticsReportButton
+                            }
                         }
                         ForEach(viewModel.diagnosticRows) { row in
                             DiagnosticRowView(row: row)
-                            if row.title == "Ask Export" {
-                                HStack(spacing: 8) {
-                                    Button(action: viewModel.runAskExportDiagnosticsAction) {
-                                        Label(viewModel.askExportDiagnosticsActionTitle, systemImage: viewModel.askExportDiagnosticsActionSymbol)
+                            if row.title == "Ask Response Export" {
+                                ViewThatFits(in: .horizontal) {
+                                    HStack(spacing: 8) {
+                                        askExportDiagnosticsButton
+                                        askExportDiagnosticsDisabledText
+                                        Spacer(minLength: 0)
                                     }
-                                    .buttonStyle(ReadableBorderedButtonStyle())
-                                    .controlSize(.small)
-                                    .disabled(!viewModel.canRunAskExportDiagnosticsAction)
-                                    .namedControl("Ask export diagnostics action", hint: "Opens the Ask export file when available or re-exports it when stale.")
 
-                                    if !viewModel.canRunAskExportDiagnosticsAction && !viewModel.askExportDiagnosticsActionDisabledReason.isEmpty {
-                                        Text(viewModel.askExportDiagnosticsActionDisabledReason)
-                                            .font(.caption2)
-                                            .foregroundStyle(Palette.muted)
-                                            .fixedSize(horizontal: false, vertical: true)
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        askExportDiagnosticsButton
+                                        askExportDiagnosticsDisabledText
                                     }
-                                    Spacer(minLength: 0)
                                 }
                             }
                         }
                         Button {
-                            visiblePanels.insert(.askAssistant)
+                            withAnimation(WorkbenchMotion.panel(reduceMotion, settings: motionSettings)) {
+                                _ = visiblePanels.insert(.askAssistant)
+                            }
                             viewModel.noteOpenedAskForExportRecovery()
                         } label: {
                             Label("Open Ask", systemImage: "text.bubble")
@@ -2650,6 +3916,7 @@ private struct SessionDiagnosticsTab: View {
                         .buttonStyle(ReadableBorderedButtonStyle())
                         .controlSize(.small)
                         .disabled(!viewModel.needsAskExportRecoveryAction)
+                        .help(viewModel.needsAskExportRecoveryAction ? "Open Ask The Assistant so you can re-export the response." : viewModel.askExportRecoveryDisabledReason)
                         .namedControl("Open Ask for export recovery", hint: "Opens Ask The Assistant so you can re-export the response.")
                         if !viewModel.needsAskExportRecoveryAction && !viewModel.askExportRecoveryDisabledReason.isEmpty {
                             Text(viewModel.askExportRecoveryDisabledReason)
@@ -2663,7 +3930,15 @@ private struct SessionDiagnosticsTab: View {
                             }
                             .buttonStyle(ReadableBorderedButtonStyle())
                             .controlSize(.small)
+                            .disabled(!viewModel.hasDebugReportFile)
+                            .help(viewModel.debugReportAvailabilityMessage.isEmpty ? "Open the latest diagnostics report." : viewModel.debugReportAvailabilityMessage)
                             .namedControl("Open diagnostics report")
+                            if !viewModel.debugReportAvailabilityMessage.isEmpty {
+                                Label("Report missing", systemImage: "exclamationmark.triangle")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(Palette.amber)
+                                    .help(viewModel.debugReportAvailabilityMessage)
+                            }
                         }
                     }
                 }
@@ -2674,19 +3949,11 @@ private struct SessionDiagnosticsTab: View {
                         ForEach(viewModel.verificationRows) { row in
                             VerificationRowView(row: row)
                         }
-                        HStack(spacing: 8) {
-                            Button(action: { viewModel.runCommand(.unitTests) }) {
-                                Label("Run Tests", systemImage: "checkmark.seal")
+                        ViewThatFits(in: .horizontal) {
+                            verificationActionButtons
+                            VStack(alignment: .leading, spacing: 6) {
+                                verificationActionButtons
                             }
-                            .namedControl("Run unit tests from checks", hint: "Runs the selected unit-test Gradle task.")
-                            Button(action: { viewModel.runCommand(.assembleDebug) }) {
-                                Label("Build", systemImage: "hammer")
-                            }
-                            .namedControl("Run build from checks", hint: "Builds the selected variant.")
-                            Button(action: { viewModel.runCommand(.logcat) }) {
-                                Label("Logcat", systemImage: "doc.text.magnifyingglass")
-                            }
-                            .namedControl("Capture logcat from checks", hint: "Captures a recent Logcat snapshot for the selected device.")
                         }
                         .buttonStyle(ReadableBorderedButtonStyle())
                         .controlSize(.small)
@@ -2702,11 +3969,13 @@ private struct SessionDiagnosticsTab: View {
                     }
                 }
 
+                LaunchReadinessDiagnosticsCard(viewModel: viewModel)
+
                 ContentCard {
                     VStack(alignment: .leading, spacing: 12) {
                         SectionHeader(title: "Context", symbol: "scope")
                         if viewModel.isProjectLoaded {
-                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            LazyVGrid(columns: contextGridColumns, spacing: 8) {
                                 ContextChip(title: "UI System", value: viewModel.snapshot.usesCompose ? "Compose" : "XML/Mixed")
                                 ContextChip(title: "SDK", value: "min \(viewModel.profile.minSDK)")
                                 ContextChip(title: "Manifest", value: viewModel.snapshot.hasAndroidManifest ? "Found" : "Missing")
@@ -2724,14 +3993,97 @@ private struct SessionDiagnosticsTab: View {
             .padding(.top, 8)
         }
     }
+
+    private var diagnosticsReportButton: some View {
+        Button(action: viewModel.createDebugReport) {
+            Label("Report", systemImage: "doc.text")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .controlSize(.small)
+        .help("Export a diagnostics report with project, device, command, and console context.")
+        .namedControl("Create diagnostics report")
+    }
+
+    private var askExportDiagnosticsButton: some View {
+        Button(action: viewModel.runAskExportDiagnosticsAction) {
+            Label(viewModel.askExportDiagnosticsActionTitle, systemImage: viewModel.askExportDiagnosticsActionSymbol)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(ReadableBorderedButtonStyle())
+        .controlSize(.small)
+        .disabled(!viewModel.canRunAskExportDiagnosticsAction)
+        .help(viewModel.askExportDiagnosticsActionHelpText)
+        .namedControl("Ask export diagnostics action", hint: "Opens the Ask export file when available or re-exports it when stale.")
+    }
+
+    @ViewBuilder
+    private var askExportDiagnosticsDisabledText: some View {
+        if !viewModel.canRunAskExportDiagnosticsAction && !viewModel.askExportDiagnosticsActionDisabledReason.isEmpty {
+            Text(viewModel.askExportDiagnosticsActionDisabledReason)
+                .font(.caption2)
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var verificationActionButtons: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                runUnitTestsButton
+                runBuildButton
+                runLogcatButton
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                runUnitTestsButton
+                runBuildButton
+                runLogcatButton
+            }
+        }
+    }
+
+    private var runUnitTestsButton: some View {
+        Button(action: { viewModel.runCommand(.unitTests) }) {
+            Label("Run Tests", systemImage: "checkmark.seal")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.canRunCommand(.unitTests))
+        .help(viewModel.commandHelpText(.unitTests))
+        .namedControl("Run unit tests from diagnostics", hint: "Runs the selected unit-test Gradle task.")
+    }
+
+    private var runBuildButton: some View {
+        Button(action: { viewModel.runCommand(.assembleDebug) }) {
+            Label("Build", systemImage: "hammer")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.canRunCommand(.assembleDebug))
+        .help(viewModel.commandHelpText(.assembleDebug))
+        .namedControl("Run build from diagnostics", hint: "Builds the selected variant.")
+    }
+
+    private var runLogcatButton: some View {
+        Button(action: { viewModel.runCommand(.logcat) }) {
+            Label("Logcat", systemImage: "doc.text.magnifyingglass")
+                .frame(maxWidth: .infinity)
+        }
+        .disabled(!viewModel.canRunCommand(.logcat))
+        .help(viewModel.commandHelpText(.logcat))
+        .namedControl("Capture logcat from diagnostics", hint: "Captures a recent Logcat snapshot for the selected device.")
+    }
+
+    private var contextGridColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 112), spacing: 8)]
+    }
 }
 
 private struct SessionChecksTab: View {
     @ObservedObject var viewModel: AgentViewModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 12) {
                 ContentCard {
                     VStack(alignment: .leading, spacing: 10) {
                         SectionHeader(title: "Verification", symbol: "checklist")
@@ -2745,7 +4097,7 @@ private struct SessionChecksTab: View {
                     VStack(alignment: .leading, spacing: 12) {
                         SectionHeader(title: "Context", symbol: "scope")
                         if viewModel.isProjectLoaded {
-                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            LazyVGrid(columns: contextGridColumns, spacing: 8) {
                                 ContextChip(title: "UI System", value: viewModel.snapshot.usesCompose ? "Compose" : "XML/Mixed")
                                 ContextChip(title: "SDK", value: "min \(viewModel.profile.minSDK)")
                                 ContextChip(title: "Manifest", value: viewModel.snapshot.hasAndroidManifest ? "Found" : "Missing")
@@ -2763,634 +4115,38 @@ private struct SessionChecksTab: View {
             .padding(.top, 8)
         }
     }
-}
 
-private struct ContentCard<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        content
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Palette.blue.opacity(0.16))
-                    .frame(width: 3)
-            }
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
-            .shadow(color: Palette.cardShadow, radius: 2, x: 0, y: 1)
+    private var contextGridColumns: [GridItem] {
+        [GridItem(.adaptive(minimum: 112), spacing: 8)]
     }
-}
-
-private struct ClosableSectionTitle: View {
-    let title: String
-    let symbol: String
-    let panel: ToolWindowPanel
-    @Binding var visiblePanels: Set<ToolWindowPanel>
-
-    init(_ title: String, symbol: String, panel: ToolWindowPanel, visiblePanels: Binding<Set<ToolWindowPanel>>) {
-        self.title = title
-        self.symbol = symbol
-        self.panel = panel
-        _visiblePanels = visiblePanels
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Label(title, systemImage: symbol)
-                .font(.headline.weight(.semibold))
-                .foregroundStyle(Palette.ink)
-            Spacer(minLength: 0)
-            Button {
-                visiblePanels.remove(panel)
-            } label: {
-                Image(systemName: "xmark")
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Palette.muted)
-            .help("Close \(title)")
-            .namedControl("Close \(title) panel", hint: "Hides this tool pane. Reopen it from the side rail.")
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct SidebarSectionTitle: View {
-    let title: String
-    let symbol: String?
-
-    init(_ title: String, symbol: String? = nil) {
-        self.title = title
-        self.symbol = symbol
-    }
-
-    var body: some View {
-        Group {
-            if let symbol {
-                Label(title, systemImage: symbol)
-            } else {
-                Text(title)
-            }
-        }
-        .font(.headline.weight(.semibold))
-        .foregroundStyle(Palette.ink)
-    }
-}
-
-@MainActor
-private func shellStatusColor(for viewModel: AgentViewModel) -> Color {
-    if viewModel.isRunningCommand || viewModel.isScanningProject || viewModel.isRefreshingDevices || viewModel.isRunningWirelessDebugging {
-        return Palette.amber
-    }
-    switch viewModel.scanState {
-    case .ready: return Palette.teal
-    case .warning: return Palette.amber
-    case .failed: return Palette.red
-    case .waiting, .scanning: return Palette.blue
-    }
-}
-
-private extension AndroidCommandKind {
-    var shellDescription: String {
-        switch self {
-        case .unitTests:
-            return "Run the selected module's unit test task."
-        case .assembleDebug:
-            return "Build the selected variant APK."
-        case .connectedTests:
-            return "Run instrumentation tests on the selected device."
-        case .devices:
-            return "List attached Android devices."
-        case .logcat:
-            return "Capture a recent Logcat snapshot."
-        case .clearLogcat:
-            return "Clear Logcat on the selected device."
-        case .launch:
-            return "Launch the configured package and activity."
-        }
-    }
-}
-
-private struct ProjectMetricStrip: View {
-    @ObservedObject var viewModel: AgentViewModel
-
-    var body: some View {
-        Group {
-            if viewModel.isProjectLoaded {
-                HStack(spacing: 8) {
-                    MiniMetric(value: viewModel.snapshot.fileCount.formatted(), label: "Files", color: Palette.blue)
-                    MiniMetric(value: viewModel.snapshot.testFileCount.formatted(), label: "Tests", color: Palette.teal)
-                    MiniMetric(value: viewModel.snapshot.hasGradleWrapper ? "Wrapper" : "System", label: "Gradle", color: Palette.amber)
-                }
-            } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(Palette.muted)
-                    Text(viewModel.isScanningProject ? "Scanning project metrics..." : "Project metrics appear after you choose a project.")
-                        .font(.caption)
-                        .foregroundStyle(Palette.muted)
-                        .lineLimit(2)
-                }
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
-            }
-        }
-    }
-}
-
-private struct MiniMetric: View {
-    let value: String
-    let label: String
-    let color: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(.headline.monospacedDigit())
-                .foregroundStyle(color)
-            Text(label)
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(Palette.muted)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.border))
-    }
-}
-
-private struct ProjectFileRow: View {
-    let item: ProjectFileItem
-    @ObservedObject var viewModel: AgentViewModel
-    @Binding var visiblePanels: Set<ToolWindowPanel>
-
-    var body: some View {
-        Button {
-            if item.isDirectory {
-                viewModel.toggleProjectFolder(item)
-            } else {
-                openInEditor()
-            }
-        } label: {
-            HStack(spacing: 8) {
-                Spacer()
-                    .frame(width: min(CGFloat(item.depth) * 12, 96))
-                if item.isDirectory {
-                    Image(systemName: viewModel.isProjectFolderExpanded(item) ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Palette.muted)
-                        .frame(width: 10)
-                } else {
-                    Color.clear
-                        .frame(width: 10, height: 10)
-                }
-                Image(systemName: item.symbol)
-                    .font(.caption)
-                    .foregroundStyle(rowIconColor)
-                    .frame(width: 16)
-                VStack(alignment: .leading, spacing: 2) {
-                    highlightedText(item.name, baseColor: rowTextColor)
-                        .font(.system(size: 13, weight: rowWeight))
-                        .lineLimit(1)
-                    highlightedText(item.path, baseColor: Palette.muted)
-                        .font(.caption2)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                Spacer(minLength: 0)
-                if isOpenFile {
-                    Text("Open")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Palette.blue)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(RoundedRectangle(cornerRadius: 5).fill(Palette.blue.opacity(0.12)))
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(rowBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isOpenFile ? Palette.blue.opacity(0.35) : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-        .contextMenu {
-            if item.isDirectory {
-                Button(viewModel.isProjectFolderExpanded(item) ? "Collapse Folder" : "Expand Folder") {
-                    viewModel.toggleProjectFolder(item)
-                }
-            } else {
-                Button("Open In Editor") {
-                    openInEditor()
-                }
-                Button("Open Externally") {
-                    viewModel.openProjectFileExternally(item)
-                }
-            }
-            Button("Copy Relative Path") {
-                viewModel.copyProjectPath(item)
-            }
-            Button("Copy Absolute Path") {
-                viewModel.copyProjectAbsolutePath(item)
-            }
-            Button("Reveal In Finder") {
-                viewModel.revealProjectFileInFinder(item)
-            }
-        }
-        .help(item.path)
-        .namedControl(item.isDirectory ? "Toggle folder \(item.path)" : "Open file \(item.path)")
-    }
-
-    private var rowWeight: Font.Weight {
-        item.isDirectory || item.isSelected ? .semibold : .regular
-    }
-
-    private var rowTextColor: Color {
-        item.isSelected ? Palette.blue : Palette.ink
-    }
-
-    private var rowIconColor: Color {
-        if item.isDirectory {
-            return viewModel.isProjectFolderExpanded(item) ? Palette.blue : Palette.muted
-        }
-        return item.isSelected ? Palette.blue : Palette.muted
-    }
-
-    private var isOpenFile: Bool {
-        !item.isDirectory && viewModel.selectedEditorPath == item.path
-    }
-
-    private var rowBackground: Color {
-        if isOpenFile { return Palette.blue.opacity(0.14) }
-        if item.isSelected { return Palette.blue.opacity(0.08) }
-        if item.isDirectory { return Palette.inputBackground.opacity(0.75) }
-        return Color.clear
-    }
-
-    private func highlightedText(_ text: String, baseColor: Color) -> Text {
-        var attributed = AttributedString(text)
-        attributed.foregroundColor = baseColor
-        let query = viewModel.fileSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !query.isEmpty,
-           let range = attributed.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) {
-            attributed[range].foregroundColor = Palette.ink
-            attributed[range].backgroundColor = Palette.diffAmber.opacity(0.75)
-        }
-        return Text(attributed)
-    }
-
-    private func openInEditor() {
-        guard !item.isDirectory else {
-            viewModel.toggleProjectFolder(item)
-            return
-        }
-        viewModel.openFile(item)
-        if viewModel.selectedEditorDocument != nil {
-            visiblePanels.insert(.editor)
-        }
-    }
-}
-
-private struct PromptHistoryMenu: View {
-    @ObservedObject var viewModel: AgentViewModel
-
-    var body: some View {
-        Menu {
-            if viewModel.promptHistory.isEmpty {
-                Text("No prompt history")
-            } else {
-                ForEach(viewModel.promptHistory, id: \.self) { value in
-                    Button(value) {
-                        viewModel.usePromptFromHistory(value)
-                    }
-                    Button("Remove: \(value.prefix(32))") {
-                        viewModel.removePromptHistory(value)
-                    }
-                }
-                Divider()
-                Button("Clear Prompt History") {
-                    viewModel.clearPromptHistory()
-                }
-            }
-        } label: {
-            HighContrastMenuLabel(title: "History", symbol: "clock")
-        }
-        .help("Restore a previous prompt.")
-        .namedControl("Prompt history")
-    }
-}
-
-private struct HighContrastMenuLabel: View {
-    let title: String
-    let symbol: String
-
-    var body: some View {
-        Label {
-            Text(title)
-                .foregroundColor(Palette.ink)
-        } icon: {
-            Image(systemName: symbol)
-                .foregroundStyle(Palette.blue)
-        }
-        .font(.caption.weight(.semibold))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 7).fill(Palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Palette.border))
-    }
-}
-
-private struct ChatBubble: View {
-    let message: AgentChatMessage
-
-    var body: some View {
-        HStack {
-            if message.isUser {
-                Spacer(minLength: 36)
-            }
-            VStack(alignment: .leading, spacing: 5) {
-                Text(message.speaker)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(message.isUser ? Palette.blue : Palette.teal)
-                Text(message.message)
-                    .font(.callout)
-                    .foregroundStyle(Palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .frame(maxWidth: 420, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 8).fill(message.isUser ? Palette.userBubble : Palette.agentBubble))
-            if !message.isUser {
-                Spacer(minLength: 36)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
-    }
-}
-
-private struct VerificationRowView: View {
-    let row: VerificationRow
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: row.symbol)
-                .foregroundStyle(stateColor)
-                .frame(width: 22)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.title)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Palette.ink)
-                Text(row.detail)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Palette.muted)
-            }
-            Spacer()
-            Text(row.state)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(stateColor)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(stateColor.opacity(0.12)))
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.inputBackground))
-        .accessibilityElement(children: .combine)
-    }
-
-    private var stateColor: Color {
-        switch row.severity {
-        case "warning", "optional": return Palette.amber
-        case "running": return Palette.amber
-        case "neutral": return Palette.blue
-        default: return Palette.teal
-        }
-    }
-}
-
-private struct DiagnosticRowView: View {
-    let row: DiagnosticRow
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: row.symbol)
-                .foregroundStyle(color)
-                .frame(width: 18)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.title)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Palette.ink)
-                Text(row.detail)
-                    .font(.caption2)
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.inputBackground))
-        .accessibilityElement(children: .combine)
-    }
-
-    private var color: Color {
-        switch row.severity {
-        case "ready": return Palette.teal
-        case "failed": return Palette.red
-        case "warning", "running": return Palette.amber
-        default: return Palette.blue
-        }
-    }
-}
-
-private struct ContextChip: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(Palette.muted)
-            Text(value)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Palette.ink)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(9)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.inputBackground))
-        .help("\(title): \(value)")
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct EmptyProjectPlaceholder: View {
-    let symbol: String
-    let title: String
-    let message: String
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: symbol)
-                .font(.title2)
-                .foregroundStyle(Palette.muted)
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(Palette.ink)
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(Palette.muted)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.inputBackground))
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct SectionHeader: View {
-    let title: String
-    let symbol: String
-
-    var body: some View {
-        Label(title, systemImage: symbol)
-            .font(.headline)
-            .foregroundStyle(Palette.ink)
-    }
-}
-
-private struct StatusPill: View {
-    let text: String
-    let color: Color
-    let symbol: String
-
-    var body: some View {
-        Label(text, systemImage: symbol)
-            .font(.caption.weight(.bold))
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .minimumScaleFactor(0.8)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 7).fill(color.opacity(0.12)))
-            .foregroundStyle(color)
-    }
-}
-
-private extension View {
-    func namedControl(_ label: String, hint: String? = nil) -> some View {
-        accessibilityLabel(Text(label))
-            .accessibilityHint(Text(hint ?? label))
-            .accessibilityIdentifier(label)
-    }
-}
-
-private struct ReadableBorderedButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isEnabled ? Palette.ink : Palette.muted)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(isEnabled ? buttonBackground(configuration: configuration) : Palette.inputBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(isEnabled ? Palette.border : Palette.border.opacity(0.8))
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 7))
-    }
-
-    private func buttonBackground(configuration: Configuration) -> Color {
-        configuration.isPressed ? Palette.inputBackground : Palette.surface
-    }
-}
-
-private struct ReadableProminentButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    let color: Color
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(isEnabled ? Color.white : Palette.muted)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(prominentBackground(configuration: configuration))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 7)
-                    .stroke(isEnabled ? color.opacity(0.65) : Palette.border)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 7))
-    }
-
-    private func prominentBackground(configuration: Configuration) -> Color {
-        guard isEnabled else { return Palette.inputBackground }
-        return configuration.isPressed ? color.opacity(0.78) : color
-    }
-}
-
-private enum Palette {
-    static let appBackground = Color(red: 0.94, green: 0.96, blue: 0.98)
-    static let titleBar = Color(red: 0.97, green: 0.98, blue: 0.99)
-    static let sidebar = Color(red: 0.96, green: 0.97, blue: 0.98)
-    static let workspace = Color(red: 0.94, green: 0.96, blue: 0.98)
-    static let inspector = Color(red: 0.97, green: 0.98, blue: 0.99)
-    static let surface = Color.white
-    static let inputBackground = Color(red: 0.96, green: 0.97, blue: 0.98)
-    static let noticeBackground = Color(red: 0.93, green: 0.96, blue: 0.98)
-    static let border = Color.black.opacity(0.10)
-    static let darkBorder = Color.white.opacity(0.10)
-    static let cardShadow = Color.black.opacity(0.06)
-    static let ink = Color(red: 0.07, green: 0.09, blue: 0.13)
-    static let muted = Color(red: 0.39, green: 0.45, blue: 0.54)
-    static let teal = Color(red: 0.06, green: 0.46, blue: 0.43)
-    static let blue = Color(red: 0.15, green: 0.39, blue: 0.92)
-    static let railMuted = Color(red: 0.21, green: 0.27, blue: 0.36)
-    static let railBackground = Color(red: 0.985, green: 0.99, blue: 1.0, opacity: 0.72)
-    static let railSelectedBackground = Color(red: 0.15, green: 0.39, blue: 0.92, opacity: 0.16)
-    static let railBorder = Color.black.opacity(0.10)
-    static let railSelectedBorder = Color(red: 0.15, green: 0.39, blue: 0.92, opacity: 0.55)
-    static let amber = Color(red: 0.70, green: 0.33, blue: 0.04)
-    static let red = Color(red: 0.78, green: 0.16, blue: 0.16)
-    static let editorHeader = Color(red: 0.07, green: 0.11, blue: 0.18)
-    static let editorBackground = Color(red: 0.04, green: 0.07, blue: 0.12)
-    static let editorText = Color(red: 0.80, green: 0.84, blue: 0.90)
-    static let terminalHeader = Color(red: 0.08, green: 0.10, blue: 0.16)
-    static let terminalBackground = Color(red: 0.03, green: 0.05, blue: 0.09)
-    static let terminalText = Color(red: 0.82, green: 0.95, blue: 0.88)
-    static let diffGreen = Color(red: 0.53, green: 0.94, blue: 0.65)
-    static let diffRed = Color(red: 0.98, green: 0.65, blue: 0.65)
-    static let diffAmber = Color(red: 0.99, green: 0.88, blue: 0.54)
-    static let diffBlue = Color(red: 0.58, green: 0.77, blue: 1.0)
-    static let greenText = Color(red: 0.35, green: 0.92, blue: 0.78)
-    static let userBubble = Color(red: 0.92, green: 0.96, blue: 1.0)
-    static let agentBubble = Color(red: 0.91, green: 0.98, blue: 0.95)
 }
 
 @MainActor
 public enum AndroidDevAgentUICoverageHarness {
+    public static func wirelessDisconnectDiagnostics() -> [String: String] {
+        AgentViewModel.wirelessDisconnectCoverageDiagnostics()
+    }
+
+    public static func deviceTestStopDiagnostics() -> [String: String] {
+        AgentViewModel.deviceTestStopCoverageDiagnostics()
+    }
+
+    public static func editorSaveSafetyDiagnostics() -> [String: String] {
+        AgentViewModel.editorSaveSafetyCoverageDiagnostics()
+    }
+
+    public static func assistantPrivacyDiagnostics() -> [String: String] {
+        AgentViewModel.assistantPrivacyCoverageDiagnostics()
+    }
+
+    public static func assistantModelSetupDiagnostics() -> [String: String] {
+        AgentViewModel.assistantModelSetupCoverageDiagnostics()
+    }
+
+    public static func launchReadinessDiagnostics() async -> [String: String] {
+        await AgentViewModel.launchReadinessCoverageDiagnostics()
+    }
+
     public static func askAssistantDiagnostics() async -> [String: String] {
         let fixtures = AgentViewModel.coverageFixtures()
         guard fixtures.count >= 4 else { return [:] }
@@ -3429,12 +4185,20 @@ public enum AndroidDevAgentUICoverageHarness {
         var touched = AgentViewModel.exerciseCoverageSurface()
         let noPanels = Binding.constant(ToolWindowPanel.defaultVisible)
         let allPanels = Binding.constant(Set(ToolWindowPanel.allCases))
+        let settingsHidden = Binding.constant(false)
 
         touched += touch(AgentWorkbenchView())
-        touched += touch(ShellTitleBar(viewModel: empty))
-        touched += touch(ShellTitleBar(viewModel: running))
-        touched += touch(ShellTitleBar(viewModel: failed))
+        touched += touch(ShellTitleBar(viewModel: empty, isSettingsPresented: settingsHidden))
+        touched += touch(ShellTitleBar(viewModel: running, isSettingsPresented: settingsHidden))
+        touched += touch(ShellTitleBar(viewModel: failed, isSettingsPresented: settingsHidden))
+        touched += touch(AgentSettingsPopover())
+        touched += touch(LaunchReadinessSettingsSection())
+        touched += touch(AgentSettingsSection(title: "Coverage", symbol: "gearshape") { Text("Theme") })
+        touched += touch(AgentAccentThemeButton(theme: .pacific, isSelected: true) {})
+        touched += touch(AgentSurfaceStyleButton(style: .balanced, isSelected: true) {})
+        touched += touch(AgentMotionStyleButton(style: .native, isSelected: true) {})
         touched += touch(EmptyToolWindowCanvas(viewModel: empty, visiblePanels: noPanels))
+        touched += touch(LaunchReadinessOnboardingCard(visiblePanels: allPanels))
         touched += touch(ToolWindowRail(side: .left, panels: ToolWindowPanel.leftPanels, visiblePanels: noPanels))
         touched += touch(ToolWindowRail(side: .left, panels: ToolWindowPanel.leftPanels, visiblePanels: allPanels))
         touched += touch(ToolWindowRail(side: .right, panels: ToolWindowPanel.rightPanels, visiblePanels: allPanels))
@@ -3449,6 +4213,13 @@ public enum AndroidDevAgentUICoverageHarness {
         touched += touch(WorkspaceOptionsDisclosure(viewModel: empty))
         touched += touch(WorkspaceOptionsDisclosure(viewModel: loaded))
         touched += touch(AndroidTargetCard(viewModel: loaded))
+        touched += touch(WirelessDeviceConnectionSheet(viewModel: empty))
+        touched += touch(WirelessDeviceDiscoveryList(viewModel: loaded))
+        touched += touch(WirelessQRCodeConnectionPanel(viewModel: empty))
+        touched += touch(WirelessPairingCodeConnectionPanel(viewModel: empty))
+        if let wirelessDevice = loaded.wirelessDebuggingDevices.first {
+            touched += touch(WirelessDebuggingDeviceRow(device: wirelessDevice, isSelected: true) {})
+        }
         touched += touch(SidebarFileBrowser(viewModel: empty, visiblePanels: allPanels))
         touched += touch(SidebarFileBrowser(viewModel: loaded, visiblePanels: allPanels))
         touched += touch(SidebarToolList(viewModel: empty))
@@ -3469,6 +4240,7 @@ public enum AndroidDevAgentUICoverageHarness {
         touched += touch(PlanPreviewDisclosure(viewModel: loaded))
         touched += touch(FileEditorPane(viewModel: empty, visiblePanels: allPanels))
         touched += touch(AskAssistantCard(viewModel: loaded))
+        touched += touch(AssistantModelSetupPanel(viewModel: loaded))
         touched += touch(BuildLogCard(viewModel: empty))
         touched += touch(BuildLogCard(viewModel: running))
         touched += touch(BuildLogCard(viewModel: failed))
@@ -3478,6 +4250,7 @@ public enum AndroidDevAgentUICoverageHarness {
         touched += touch(SessionChatTab(viewModel: loaded))
         touched += touch(SessionDiagnosticsTab(viewModel: empty, visiblePanels: allPanels))
         touched += touch(SessionDiagnosticsTab(viewModel: loaded, visiblePanels: allPanels))
+        touched += touch(LaunchReadinessDiagnosticsCard(viewModel: loaded))
         touched += touch(SessionChecksTab(viewModel: empty))
         touched += touch(SessionChecksTab(viewModel: loaded))
         touched += touch(ContentCard { Text("Coverage content") })

@@ -285,3 +285,21 @@ public struct CommandResult: Hashable, Sendable {
         exitCode == 0
     }
 }
+
+public struct BinaryCommandResult: Hashable, Sendable {
+    public let command: ToolCommand
+    public let exitCode: Int32
+    public let standardOutput: Data
+    public let standardError: String
+
+    public init(command: ToolCommand, exitCode: Int32, standardOutput: Data, standardError: String) {
+        self.command = command
+        self.exitCode = exitCode
+        self.standardOutput = standardOutput
+        self.standardError = standardError
+    }
+
+    public var succeeded: Bool {
+        exitCode == 0
+    }
+}

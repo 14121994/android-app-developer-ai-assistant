@@ -93,6 +93,56 @@ public enum AndroidToolCommandFactory {
         )
     }
 
+    public static func deviceScreenCapture(rootPath: String, deviceSerial: String? = nil) -> ToolCommand {
+        var arguments = ["exec-out", "screencap", "-p"]
+        if let deviceSerial, !deviceSerial.isEmpty {
+            arguments = ["-s", deviceSerial] + arguments
+        }
+        return adbCommand(
+            title: "Capture Device Screen",
+            rootPath: rootPath,
+            arguments: arguments
+        )
+    }
+
+    public static func tapDeviceScreen(rootPath: String, deviceSerial: String? = nil, x: Int, y: Int) -> ToolCommand {
+        let safeX = max(0, x)
+        let safeY = max(0, y)
+        var arguments = ["shell", "input", "tap", "\(safeX)", "\(safeY)"]
+        if let deviceSerial, !deviceSerial.isEmpty {
+            arguments = ["-s", deviceSerial] + arguments
+        }
+        return adbCommand(
+            title: "Tap Device Screen",
+            rootPath: rootPath,
+            arguments: arguments
+        )
+    }
+
+    public static func listInstrumentation(rootPath: String, deviceSerial: String? = nil) -> ToolCommand {
+        var arguments = ["shell", "pm", "list", "instrumentation"]
+        if let deviceSerial, !deviceSerial.isEmpty {
+            arguments = ["-s", deviceSerial] + arguments
+        }
+        return adbCommand(
+            title: "List Device Instrumentation",
+            rootPath: rootPath,
+            arguments: arguments
+        )
+    }
+
+    public static func forceStopPackage(rootPath: String, packageName: String, deviceSerial: String? = nil) -> ToolCommand {
+        var arguments = ["shell", "am", "force-stop", packageName]
+        if let deviceSerial, !deviceSerial.isEmpty {
+            arguments = ["-s", deviceSerial] + arguments
+        }
+        return adbCommand(
+            title: "Force Stop \(packageName)",
+            rootPath: rootPath,
+            arguments: arguments
+        )
+    }
+
     private static func gradleCommand(title: String, rootPath: String, task: String) -> ToolCommand {
         let wrapper = URL(fileURLWithPath: rootPath).appendingPathComponent("gradlew").path
         let fileManager = FileManager.default

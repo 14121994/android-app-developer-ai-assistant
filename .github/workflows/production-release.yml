@@ -1,0 +1,311 @@
+name: Production Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Run a release or restore the previous hosted appcast.
+        required: true
+        type: choice
+        default: release
+        options:
+          - release
+          - rollback
+      channel:
+        description: Sparkle channel to publish.
+        required: true
+        type: choice
+        default: stable
+        options:
+          - stable
+          - beta
+      version:
+        description: CFBundleShortVersionString for release builds.
+        required: true
+        type: string
+        default: 1.0.0
+      build_number:
+        description: CFBundleVersion for release builds.
+        required: true
+        type: string
+        default: "1"
+      promote:
+        description: Promote the signed appcast to the hosted update channel.
+        required: true
+        type: boolean
+        default: false
+      dry_run:
+        description: Stage promotion or rollback without replacing the hosted channel.
+        required: true
+        type: boolean
+        default: false
+      rollback_source:
+        description: Optional explicit rollback snapshot path on the hydrated hosting mirror.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release-${{ inputs.channel }}
+  cancel-in-progress: false
+
+env:
+  CHANNEL: ${{ inputs.channel }}
+  VERSION: ${{ inputs.version }}
+  BUILD_NUMBER: ${{ inputs.build_number }}
+  BUNDLE_ID: ${{ vars.BUNDLE_ID }}
+  DEVELOPER_ID_APPLICATION: ${{ vars.DEVELOPER_ID_APPLICATION }}
+  DEVELOPER_ID_INSTALLER: ${{ vars.DEVELOPER_ID_INSTALLER }}
+  UPDATE_BASE_URL: ${{ vars.UPDATE_BASE_URL }}
+  LICENSE_ACTIVATION_URL: ${{ vars.LICENSE_ACTIVATION_URL }}
+  LICENSE_REFRESH_URL: ${{ vars.LICENSE_REFRESH_URL }}
+  LICENSE_RECOVERY_URL: ${{ vars.LICENSE_RECOVERY_URL }}
+  LICENSE_TRANSFER_URL: ${{ vars.LICENSE_TRANSFER_URL }}
+  PRIVACY_POLICY_URL: ${{ vars.PRIVACY_POLICY_URL }}
+  CRASH_REPORTING_ENDPOINT: ${{ vars.CRASH_REPORTING_ENDPOINT }}
+  SUPPORT_UPLOAD_ENDPOINT: ${{ vars.SUPPORT_UPLOAD_ENDPOINT }}
+  SYMBOL_UPLOAD_ENDPOINT: ${{ vars.SYMBOL_UPLOAD_ENDPOINT }}
+  LICENSE_POLICY_PATH: ${{ vars.LICENSE_POLICY_PATH || 'docs/release-evidence/license-policy.md' }}
+  DATA_RETENTION_POLICY_PATH: ${{ vars.DATA_RETENTION_POLICY_PATH || 'docs/release-evidence/data-retention-policy.md' }}
+  SUPPORT_REDACTION_POLICY_PATH: ${{ vars.SUPPORT_REDACTION_POLICY_PATH || 'docs/release-evidence/support-redaction-policy.md' }}
+  CRASH_PIPELINE_RUNBOOK_PATH: ${{ vars.CRASH_PIPELINE_RUNBOOK_PATH || 'docs/release-evidence/crash-pipeline-runbook.md' }}
+  SPARKLE_ROLLOUT_PLAN_PATH: ${{ vars.SPARKLE_ROLLOUT_PLAN_PATH || 'docs/release-evidence/sparkle-rollout-plan.md' }}
+  SPARKLE_ROLLBACK_PLAN_PATH: ${{ vars.SPARKLE_ROLLBACK_PLAN_PATH || 'docs/release-evidence/sparkle-rollback-plan.md' }}
+  ANDROID_MATRIX_REPORT_PATH: ${{ vars.ANDROID_MATRIX_REPORT_PATH || 'docs/release-evidence/android-matrix-report.md' }}
+
+jobs:
+  release-candidate:
+    name: Build, Sign, Notarize, Verify
+    if: ${{ inputs.operation == 'release' }}
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Swift toolchain
+        run: swift --version
+
+      - name: Run package tests
+        run: swift test
+
+      - name: Run smoke tests
+        run: swift run AndroidDevAgentSmokeTests
+
+      - name: Validate release configuration
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_INSTALLER_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_P12_BASE64 }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          test -n "$BUNDLE_ID"
+          test -n "$DEVELOPER_ID_APPLICATION"
+          test -n "$DEVELOPER_ID_INSTALLER"
+          test -n "$UPDATE_BASE_URL"
+          test -n "$LICENSE_ACTIVATION_URL"
+          test -n "$LICENSE_REFRESH_URL"
+          test -n "$LICENSE_RECOVERY_URL"
+          test -n "$LICENSE_TRANSFER_URL"
+          test -n "$PRIVACY_POLICY_URL"
+          test -n "$CRASH_REPORTING_ENDPOINT"
+          test -n "$SUPPORT_UPLOAD_ENDPOINT"
+          test -n "$SYMBOL_UPLOAD_ENDPOINT"
+          test -n "$MACOS_CERTIFICATE_P12_BASE64"
+          test -n "$MACOS_INSTALLER_CERTIFICATE_P12_BASE64"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_TEAM_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$SPARKLE_PUBLIC_ED_KEY"
+          test -n "$SPARKLE_PRIVATE_KEY"
+
+      - name: Import Developer ID certificates
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_INSTALLER_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_INSTALLER_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || github.run_id }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/release-signing.keychain-db"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 -D > "$RUNNER_TEMP/app-cert.p12"
+          printf '%s' "$MACOS_INSTALLER_CERTIFICATE_P12_BASE64" | base64 -D > "$RUNNER_TEMP/installer-cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$RUNNER_TEMP/app-cert.p12" -k "$KEYCHAIN_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security import "$RUNNER_TEMP/installer-cert.p12" -k "$KEYCHAIN_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Package, notarize, and verify release candidate
+        env:
+          RELEASE: "1"
+          NOTARIZE: "1"
+          VERIFY_RELEASE_ARTIFACTS: "1"
+          BUNDLE_ID: ${{ env.BUNDLE_ID }}
+          VERSION: ${{ env.VERSION }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+          CHANNEL: ${{ env.CHANNEL }}
+          SIGNING_IDENTITY: ${{ env.DEVELOPER_ID_APPLICATION }}
+          INSTALLER_SIGNING_IDENTITY: ${{ env.DEVELOPER_ID_INSTALLER }}
+          UPDATE_BASE_URL: ${{ env.UPDATE_BASE_URL }}/${{ env.CHANNEL }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SPARKLE_PUBLIC_ED_KEY: ${{ secrets.SPARKLE_PUBLIC_ED_KEY }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          LICENSE_ACTIVATION_URL: ${{ env.LICENSE_ACTIVATION_URL }}
+          LICENSE_REFRESH_URL: ${{ env.LICENSE_REFRESH_URL }}
+          LICENSE_RECOVERY_URL: ${{ env.LICENSE_RECOVERY_URL }}
+          LICENSE_TRANSFER_URL: ${{ env.LICENSE_TRANSFER_URL }}
+          LICENSE_POLICY_PATH: ${{ env.LICENSE_POLICY_PATH }}
+          PRIVACY_POLICY_URL: ${{ env.PRIVACY_POLICY_URL }}
+          DATA_RETENTION_POLICY_PATH: ${{ env.DATA_RETENTION_POLICY_PATH }}
+          SUPPORT_REDACTION_POLICY_PATH: ${{ env.SUPPORT_REDACTION_POLICY_PATH }}
+          CRASH_REPORTING_ENDPOINT: ${{ env.CRASH_REPORTING_ENDPOINT }}
+          SUPPORT_UPLOAD_ENDPOINT: ${{ env.SUPPORT_UPLOAD_ENDPOINT }}
+          SYMBOL_UPLOAD_ENDPOINT: ${{ env.SYMBOL_UPLOAD_ENDPOINT }}
+          CRASH_PIPELINE_RUNBOOK_PATH: ${{ env.CRASH_PIPELINE_RUNBOOK_PATH }}
+          SPARKLE_ROLLOUT_PLAN_PATH: ${{ env.SPARKLE_ROLLOUT_PLAN_PATH }}
+          SPARKLE_ROLLBACK_PLAN_PATH: ${{ env.SPARKLE_ROLLBACK_PLAN_PATH }}
+          ANDROID_MATRIX_REPORT_PATH: ${{ env.ANDROID_MATRIX_REPORT_PATH }}
+        run: bash scripts/package_macos_app.sh
+
+      - name: Upload release candidate artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-dev-agent-${{ env.CHANNEL }}-${{ env.VERSION }}-${{ env.BUILD_NUMBER }}
+          path: |
+            dist/release/${{ env.CHANNEL }}/${{ env.VERSION }}-${{ env.BUILD_NUMBER }}
+            dist/updates/${{ env.CHANNEL }}
+          retention-days: 30
+
+  promote-release:
+    name: Promote Appcast
+    if: ${{ inputs.operation == 'release' && inputs.promote }}
+    needs: release-candidate
+    runs-on: macos-14
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download release candidate artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-dev-agent-${{ env.CHANNEL }}-${{ env.VERSION }}-${{ env.BUILD_NUMBER }}
+          path: dist
+
+      - name: Configure appcast SSH
+        env:
+          APPCAST_SSH_PRIVATE_KEY: ${{ secrets.APPCAST_SSH_PRIVATE_KEY }}
+          APPCAST_KNOWN_HOSTS: ${{ secrets.APPCAST_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$APPCAST_SSH_PRIVATE_KEY" ]; then
+            echo "APPCAST_SSH_PRIVATE_KEY is not configured; assuming the runner already has hosting access."
+            exit 0
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$APPCAST_SSH_PRIVATE_KEY" > "$HOME/.ssh/appcast_key"
+          chmod 600 "$HOME/.ssh/appcast_key"
+          if [ -n "$APPCAST_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$APPCAST_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          fi
+          cat >> "$HOME/.ssh/config" <<'SSHCONFIG'
+          Host *
+            IdentityFile ~/.ssh/appcast_key
+            IdentitiesOnly yes
+          SSHCONFIG
+
+      - name: Hydrate current hosted channel
+        env:
+          APPCAST_RSYNC_TARGET: ${{ secrets.APPCAST_RSYNC_TARGET }}
+        run: |
+          if [ -z "$APPCAST_RSYNC_TARGET" ]; then
+            echo "APPCAST_RSYNC_TARGET is not configured; promotion will update only the local hosting mirror."
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/appcast-hosting/$CHANNEL"
+          rsync -az "$APPCAST_RSYNC_TARGET"/ "$RUNNER_TEMP/appcast-hosting/$CHANNEL"/ || true
+
+      - name: Promote verified appcast
+        env:
+          RELEASE_DIR: dist/release/${{ env.CHANNEL }}/${{ env.VERSION }}-${{ env.BUILD_NUMBER }}
+          UPDATES_DIR: dist/updates/${{ env.CHANNEL }}
+          HOSTING_DIR: ${{ runner.temp }}/appcast-hosting
+          RSYNC_TARGET: ${{ secrets.APPCAST_RSYNC_TARGET }}
+          CHANNEL: ${{ env.CHANNEL }}
+          VERSION: ${{ env.VERSION }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+          APPCAST_URL: ${{ env.UPDATE_BASE_URL }}/${{ env.CHANNEL }}/appcast.xml
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: bash scripts/promote_release.sh
+
+      - name: Upload promotion manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-dev-agent-promotion-${{ env.CHANNEL }}-${{ env.VERSION }}-${{ env.BUILD_NUMBER }}
+          path: dist/release/${{ env.CHANNEL }}/${{ env.VERSION }}-${{ env.BUILD_NUMBER }}/promotion-manifest.json
+          retention-days: 30
+
+  rollback-release:
+    name: Roll Back Appcast
+    if: ${{ inputs.operation == 'rollback' }}
+    runs-on: macos-14
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure appcast SSH
+        env:
+          APPCAST_SSH_PRIVATE_KEY: ${{ secrets.APPCAST_SSH_PRIVATE_KEY }}
+          APPCAST_KNOWN_HOSTS: ${{ secrets.APPCAST_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$APPCAST_SSH_PRIVATE_KEY" ]; then
+            echo "APPCAST_SSH_PRIVATE_KEY is not configured; assuming the runner already has hosting access."
+            exit 0
+          fi
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$APPCAST_SSH_PRIVATE_KEY" > "$HOME/.ssh/appcast_key"
+          chmod 600 "$HOME/.ssh/appcast_key"
+          if [ -n "$APPCAST_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$APPCAST_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          fi
+          cat >> "$HOME/.ssh/config" <<'SSHCONFIG'
+          Host *
+            IdentityFile ~/.ssh/appcast_key
+            IdentitiesOnly yes
+          SSHCONFIG
+
+      - name: Hydrate current hosted channel
+        env:
+          APPCAST_RSYNC_TARGET: ${{ secrets.APPCAST_RSYNC_TARGET }}
+        run: |
+          test -n "$APPCAST_RSYNC_TARGET"
+          mkdir -p "$RUNNER_TEMP/appcast-hosting/$CHANNEL"
+          rsync -az "$APPCAST_RSYNC_TARGET"/ "$RUNNER_TEMP/appcast-hosting/$CHANNEL"/
+
+      - name: Roll back hosted appcast
+        env:
+          HOSTING_DIR: ${{ runner.temp }}/appcast-hosting
+          RSYNC_TARGET: ${{ secrets.APPCAST_RSYNC_TARGET }}
+          CHANNEL: ${{ env.CHANNEL }}
+          ROLLBACK_SOURCE: ${{ inputs.rollback_source }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+        run: bash scripts/rollback_release.sh
+
+      - name: Upload rollback manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-dev-agent-rollback-${{ env.CHANNEL }}-${{ github.run_number }}
+          path: ${{ runner.temp }}/appcast-hosting/.release-state/${{ env.CHANNEL }}/rollback-*.json
+          retention-days: 30

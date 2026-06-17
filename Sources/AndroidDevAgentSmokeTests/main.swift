@@ -204,19 +204,23 @@ func runPlannerTests(runner: inout SmokeTestRunner) {
         try expect(catalog.tools.allSatisfy(\.isMVP), "All current tools should be part of the MVP.")
     }
 
-    runner.run("assistant TaskDroid config targets local planner model") {
+    runner.run("assistant TaskDroid config is optional for customers") {
         let config = AssistantOrchestrationConfig(mode: .deep, openAIAPIKey: nil)
-        try expectEqual(
-            config.taskDroidBaseURL?.absoluteString,
-            "http://127.0.0.1:8000",
-            "TaskDroid should default to the local planner API."
+        let configured = AssistantOrchestrationConfig(
+            mode: .deep,
+            openAIAPIKey: nil,
+            taskDroidBaseURL: URL(string: "https://planner.example.com")!,
+            taskDroidTimeoutSeconds: 42
         )
+
+        try expectEqual(config.taskDroidBaseURL?.absoluteString, nil, "TaskDroid should not default to localhost.")
         try expectEqual(
             Int(config.taskDroidTimeoutSeconds),
             360,
             "TaskDroid timeout should allow local vLLM-backed planner responses."
         )
-        try expect(config.preferTaskDroid, "TaskDroid should be preferred for bound Android planner modes.")
+        try expectEqual(configured.taskDroidBaseURL?.absoluteString, "https://planner.example.com", "TaskDroid should use the configured planner API.")
+        try expectEqual(Int(configured.taskDroidTimeoutSeconds), 42, "TaskDroid timeout should use configured value.")
     }
 
     runner.run("assistant modes expose read-only bound model metadata") {
@@ -237,7 +241,7 @@ func runPlannerTests(runner: inout SmokeTestRunner) {
         )
         try expectEqual(
             AssistantModelMode.privateLocal.boundModels.map(\.modelID),
-            ["taskdroid-android-planner-v1"],
+            ["gpt-oss-20b-local-fallback"],
             "Private mode should describe the local fallback route."
         )
         try expect(
@@ -405,6 +409,33 @@ func runCommandFactoryTests(runner: inout SmokeTestRunner) {
         try expectEqual(disconnectArguments, ["disconnect", "192.168.1.10:42177"], "Disconnect command should pass adb disconnect host:port.")
     }
 
+    runner.run("Device screen capture command targets selected serial") {
+        let root = try makeTempDirectory("screen-capture-adb-command")
+        let capture = AndroidToolCommandFactory.deviceScreenCapture(rootPath: root.path, deviceSerial: "192.168.1.10:42177")
+        let arguments = capture.executable == "/usr/bin/env" ? Array(capture.arguments.dropFirst()) : capture.arguments
+
+        try expectEqual(arguments, ["-s", "192.168.1.10:42177", "exec-out", "screencap", "-p"], "Screen capture should target the selected serial and stream a PNG frame.")
+    }
+
+    runner.run("Device screen tap command targets selected serial and coordinates") {
+        let root = try makeTempDirectory("screen-tap-adb-command")
+        let tap = AndroidToolCommandFactory.tapDeviceScreen(rootPath: root.path, deviceSerial: "192.168.1.10:42177", x: 123, y: 456)
+        let arguments = tap.executable == "/usr/bin/env" ? Array(tap.arguments.dropFirst()) : tap.arguments
+
+        try expectEqual(arguments, ["-s", "192.168.1.10:42177", "shell", "input", "tap", "123", "456"], "Screen tap should target the selected serial and send adb input tap coordinates.")
+    }
+
+    runner.run("Device test cleanup commands target selected serial and package") {
+        let root = try makeTempDirectory("device-test-cleanup-adb-command")
+        let list = AndroidToolCommandFactory.listInstrumentation(rootPath: root.path, deviceSerial: "emulator-5554")
+        let forceStop = AndroidToolCommandFactory.forceStopPackage(rootPath: root.path, packageName: "com.example.sample", deviceSerial: "emulator-5554")
+        let listArguments = list.executable == "/usr/bin/env" ? Array(list.arguments.dropFirst()) : list.arguments
+        let forceStopArguments = forceStop.executable == "/usr/bin/env" ? Array(forceStop.arguments.dropFirst()) : forceStop.arguments
+
+        try expectEqual(listArguments, ["-s", "emulator-5554", "shell", "pm", "list", "instrumentation"], "Instrumentation lookup should target the selected device.")
+        try expectEqual(forceStopArguments, ["-s", "emulator-5554", "shell", "am", "force-stop", "com.example.sample"], "Force-stop should target the selected device and package.")
+    }
+
     runner.run("ToolCommand preview quotes arguments with spaces") {
         let command = ToolCommand(
             title: "Preview",
@@ -429,6 +460,53 @@ func runProcessRunnerTests(runner: inout SmokeTestRunner) async {
 
         try expect(result.succeeded, "Echo command should succeed.")
         try expect(result.standardOutput.contains("agent-ok"), "Echo output should be captured.")
+    }
+
+    await runner.runAsync("ProcessRunner can terminate a running command") {
+        let processRunner = ProcessRunner()
+        let command = ToolCommand(
+            title: "Sleep",
+            executable: "/bin/sleep",
+            arguments: ["5"],
+            workingDirectory: "/tmp"
+        )
+        let task = Task {
+            await processRunner.run(command, timeoutSeconds: 10)
+        }
+
+        var sawRunningProcess = false
+        for _ in 0..<20 {
+            if processRunner.hasRunningProcess {
+                sawRunningProcess = true
+                break
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        try expect(sawRunningProcess, "Sleep command should expose an active process before cancellation.")
+        try expect(processRunner.terminateRunningProcess(), "Active process should accept termination.")
+        let result = await task.value
+
+        try expect(!result.succeeded, "Terminated command should not report success.")
+        try expect(result.exitCode != -2, "Manual termination should not be reported as a timeout.")
+    }
+
+    await runner.runAsync("ProcessRunner drains large binary stdout while command runs") {
+        let root = try makeTempDirectory("large-binary-output")
+        let payload = Data(repeating: 0x41, count: 512 * 1024)
+        let payloadURL = root.appendingPathComponent("payload.bin")
+        try payload.write(to: payloadURL)
+        let command = ToolCommand(
+            title: "Large Binary Output",
+            executable: "/bin/cat",
+            arguments: [payloadURL.path],
+            workingDirectory: root.path
+        )
+        let result = await ProcessRunner().runBinary(command, timeoutSeconds: 2)
+
+        try expect(result.succeeded, "Large binary command should finish without pipe-buffer timeout.")
+        try expectEqual(result.standardOutput.count, payload.count, "Large binary stdout should be captured completely.")
+        try expectEqual(result.standardOutput, payload, "Large binary stdout should match the emitted payload.")
     }
 
     await runner.runAsync("ProcessRunner returns structured failure for missing executable") {
@@ -485,6 +563,126 @@ func runUICoverageTests(runner: inout SmokeTestRunner) async {
         }
 
         try expect(touched > 150, "UI coverage harness should exercise many visible app states.")
+    }
+
+    await runner.runAsync("Target disconnect prefers selected discovered wireless device") {
+        let diagnostics = await MainActor.run {
+            AndroidDevAgentUICoverageHarness.wirelessDisconnectDiagnostics()
+        }
+
+        try expectEqual(diagnostics["canDisconnect"], "true", "Wireless disconnect should be available for the discovered selected target.")
+        try expectEqual(diagnostics["canDisconnectSelected"], "true", "Target-card disconnect should be available for selected wireless devices.")
+        try expect(diagnostics["disconnectHelp"]?.contains("192.168.225.46:42783") == true, "Disconnect should target the discovered selected device address.")
+        try expect(diagnostics["disconnectHelp"]?.contains("192.168.1.99:49999") == false, "Disconnect should not prefer stale manual address over selected target.")
+        try expect(diagnostics["disconnectHelp"]?.contains("192.168.1.98:48888") == false, "Disconnect should not prefer stale last wireless address over selected target.")
+    }
+
+    await runner.runAsync("Device Tests stop includes target and instrumentation packages") {
+        let diagnostics = await MainActor.run {
+            AndroidDevAgentUICoverageHarness.deviceTestStopDiagnostics()
+        }
+        let packages = diagnostics["packages"] ?? ""
+
+        try expect(packages.contains("com.example.coverage"), "Cleanup should include the target application package.")
+        try expect(packages.contains("com.example.coverage.test"), "Cleanup should include the default Android test package.")
+        try expect(packages.contains("com.example.coverage.debug"), "Cleanup should include discovered debug target packages.")
+        try expect(packages.contains("com.example.coverage.debug.test"), "Cleanup should include discovered instrumentation packages.")
+        try expect(!packages.contains("com.other.app"), "Cleanup should not include unrelated instrumentation packages.")
+    }
+
+    await runner.runAsync("Editor save uses scoped diff checkpoint and secret gate") {
+        let diagnostics = await MainActor.run {
+            AndroidDevAgentUICoverageHarness.editorSaveSafetyDiagnostics()
+        }
+
+        try expectEqual(diagnostics["safeFileUpdated"], "true", "Safe editor save should update the workspace file.")
+        try expectEqual(diagnostics["pendingDiffWasScoped"], "true", "Pending editor diff should be scoped to the edited file.")
+        try expectEqual(diagnostics["checkpointExists"], "true", "Safe editor save should create an undo checkpoint.")
+        try expectEqual(diagnostics["checkpointMatchesOriginal"], "true", "Undo checkpoint should preserve the pre-save file content.")
+        try expect(diagnostics["safeStatus"]?.contains("scoped diff") == true, "Safe editor save should report scoped diff review.")
+        try expect(diagnostics["safeRows"]?.contains("Undo checkpoint") == true, "Safety rows should expose undo checkpoint status.")
+        try expectEqual(diagnostics["secretBlocked"], "true", "Secret-like editor changes should be blocked before disk write.")
+        try expectEqual(diagnostics["secretFileUnchanged"], "true", "Blocked secret save should leave the backing file unchanged.")
+        try expect(diagnostics["secretSummary"]?.contains("Blocked") == true, "Secret scanner should report the blocked save.")
+        try expectEqual(diagnostics["secretDiffRedacted"], "true", "Secret-bearing diff preview should be redacted.")
+    }
+
+    await runner.runAsync("Ask Assistant gates provider context behind consent") {
+        let diagnostics = await MainActor.run {
+            AndroidDevAgentUICoverageHarness.assistantPrivacyDiagnostics()
+        }
+        let sharedContextCount = Int(diagnostics["sharedContextCount"] ?? "0") ?? 0
+
+        try expectEqual(diagnostics["defaultSharingAllowed"], "false", "Provider sharing should be off by default.")
+        try expectEqual(diagnostics["defaultContextCount"], "0", "Default Ask payload should not include project file excerpts.")
+        try expectEqual(diagnostics["defaultCommandOutputNil"], "true", "Default Ask payload should not include command output.")
+        try expect(diagnostics["defaultDisclosure"]?.contains("will not send") == true, "Default privacy disclosure should state that provider payload is blocked.")
+        try expect(diagnostics["defaultPayloadSummary"]?.contains("file excerpts blocked") == true, "Payload summary should show blocked file excerpts.")
+        try expectEqual(diagnostics["sharedSharingAllowed"], "true", "Explicit consent should allow provider payload sharing.")
+        try expect(sharedContextCount > 0, "Explicit consent should allow redacted project context excerpts.")
+        try expectEqual(diagnostics["sharedCommandOutputPresent"], "true", "Explicit consent should allow recent command output.")
+        try expect(diagnostics["sharedDisclosure"]?.contains("may send") == true, "Enabled disclosure should describe provider sharing.")
+        try expect(diagnostics["accountSummary"]?.contains("OpenAI") == true, "Privacy flow should surface account/provider status.")
+        try expectEqual(diagnostics["privateModeOverridesSharing"], "true", "Private mode should block provider payload sharing even after consent.")
+    }
+
+    await runner.runAsync("Ask Assistant uses customer model setup") {
+        let diagnostics = await MainActor.run {
+            AndroidDevAgentUICoverageHarness.assistantModelSetupDiagnostics()
+        }
+
+        try expectEqual(diagnostics["defaultURL"], "nil", "TaskDroid should be unset by default.")
+        try expectEqual(diagnostics["defaultEnabled"], "false", "TaskDroid should not be enabled until configured.")
+        try expect(diagnostics["defaultSummary"]?.contains("No customer model endpoint") == true, "Default setup summary should guide customers to configure models.")
+        try expectEqual(diagnostics["configuredURL"], "https://planner.example.com", "TaskDroid setup should accept a customer URL.")
+        try expectEqual(diagnostics["configuredEnabled"], "true", "Configured TaskDroid should become active when enabled.")
+        try expectEqual(diagnostics["configuredTimeout"], "42", "Configured TaskDroid timeout should be used.")
+        try expect(diagnostics["accountSummary"]?.contains("planner.example.com") == true, "Account summary should surface the configured customer endpoint.")
+    }
+
+    await runner.runAsync("Launch readiness exposes support controls") {
+        let diagnostics = await AndroidDevAgentUICoverageHarness.launchReadinessDiagnostics()
+        let rows = diagnostics["rows"] ?? ""
+
+        try expect(rows.contains("Crash Reporting"), "Launch readiness should expose crash reporting status.")
+        try expect(rows.contains("Crash Symbolication"), "Launch readiness should expose crash symbolication status.")
+        try expect(rows.contains("Telemetry"), "Launch readiness should expose telemetry controls.")
+        try expect(rows.contains("License Activation"), "Launch readiness should expose license activation status.")
+        try expect(rows.contains("Privacy Audit"), "Launch readiness should expose privacy audit status.")
+        try expect(rows.contains("Support Redaction"), "Launch readiness should expose support redaction status.")
+        try expect(rows.contains("Support Upload"), "Launch readiness should expose support upload status.")
+        try expect(rows.contains("Diagnostic Version"), "Launch readiness should expose diagnostic version stamps.")
+        try expect(rows.contains("Onboarding"), "Launch readiness should expose onboarding status.")
+        try expect(rows.contains("Release Notes"), "Launch readiness should expose release notes status.")
+        try expect(diagnostics["defaultTelemetry"]?.contains("No telemetry") == true, "Telemetry should default to off.")
+        try expect(diagnostics["defaultLicenseSummary"]?.contains("Trial active") == true, "Commercial licensing should start with a bounded trial.")
+        try expect(diagnostics["defaultLicenseSummary"]?.contains("not configured") == true, "Default license state should not imply a configured backend.")
+        try expect(diagnostics["invalidLicense"]?.contains("ADA-XXXX") == true, "Invalid license keys should be rejected with the expected format.")
+        try expect(diagnostics["missingAccount"]?.contains("Account email") == true, "License activation should require account email for recovery.")
+        try expectEqual(diagnostics["validLicense"], "Subscription active for Android Dev Agent Pro.", "Valid license keys should activate through the backend.")
+        try expect(diagnostics["activeLicenseSummary"]?.contains("ADA-****") == true, "Activated license status should be masked.")
+        try expect(diagnostics["activeLicenseSummary"]?.contains("Backend endpoints") == true, "Activated license status should reflect configured backend endpoints.")
+        try expect(diagnostics["refreshedLicense"]?.contains("Subscription active") == true, "License refresh should verify the active entitlement.")
+        try expect(diagnostics["offlineGrace"]?.contains("Offline grace active") == true, "License refresh failures should enter offline grace when allowed.")
+        try expectEqual(diagnostics["recoveredAccount"], "Recovery email sent.", "Account recovery should call the backend contract.")
+        try expect(diagnostics["transferredLicense"]?.contains("License transfer pending") == true, "License transfer should call the backend contract.")
+        try expect(diagnostics["transferSummary"]?.contains("transfer pending") == true, "Transferred licenses should no longer be treated as active.")
+        try expect(diagnostics["onboardingSummary"]?.contains("complete") == true, "Onboarding completion should be persisted.")
+        try expect(diagnostics["releaseNotesSummary"]?.contains("available") == true, "Generated release notes should be detected.")
+        try expectEqual(diagnostics["supportReportExists"], "true", "Support bundle should include support-report.txt.")
+        try expectEqual(diagnostics["supportReportRedacted"], "true", "Support bundle should redact common secret-shaped values.")
+        try expectEqual(diagnostics["privacyAuditCopied"], "true", "Support bundle should include privacy audit history.")
+        try expectEqual(diagnostics["launchManifestExists"], "true", "Support bundle should include launch-readiness.txt.")
+        try expectEqual(diagnostics["releaseNotesCopied"], "true", "Support bundle should include release notes when available.")
+        try expectEqual(diagnostics["issueIDExists"], "true", "Support bundle should include a support issue id artifact.")
+        try expectEqual(diagnostics["issueIDStamped"], "true", "Support issue id should use the launch support prefix.")
+        try expectEqual(diagnostics["diagnosticVersionExists"], "true", "Support bundle should include diagnostic version stamps.")
+        try expectEqual(diagnostics["diagnosticVersionStamped"], "true", "Diagnostic version stamps should include schema and app version.")
+        try expectEqual(diagnostics["redactionSummaryExists"], "true", "Support bundle should include a redaction summary.")
+        try expectEqual(diagnostics["symbolicationExists"], "true", "Support bundle should include crash symbolication metadata.")
+        try expectEqual(diagnostics["symbolicationStamped"], "true", "Crash symbolication metadata should include symbol routing fields.")
+        try expect(diagnostics["supportUploadStatus"]?.contains("Support bundle uploaded") == true, "Support bundle upload should run through the configured backend.")
+        try expect(diagnostics["supportStatus"]?.contains("Support bundle exported") == true, "Support bundle export should update status.")
     }
 
     await runner.runAsync("Ask Assistant returns project-specific answers") {
