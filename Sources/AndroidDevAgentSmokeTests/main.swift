@@ -436,6 +436,36 @@ func runCommandFactoryTests(runner: inout SmokeTestRunner) {
         try expectEqual(forceStopArguments, ["-s", "emulator-5554", "shell", "am", "force-stop", "com.example.sample"], "Force-stop should target the selected device and package.")
     }
 
+    runner.run("Launch installation binds the selected device and replacement mode") {
+        let root = try makeTempDirectory("launch-install-command")
+        let wrapper = root.appendingPathComponent("gradlew")
+        try write("#!/bin/sh\necho wrapper\n", to: wrapper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path)
+
+        let installVariant = AndroidToolCommandFactory.installVariant(
+            rootPath: root.path,
+            task: ":app:installDebug",
+            deviceSerial: "192.168.1.10:42177"
+        )
+        let installAPK = AndroidToolCommandFactory.installApp(
+            rootPath: root.path,
+            apkPath: "/tmp/app-debug.apk",
+            deviceSerial: "192.168.1.10:42177"
+        )
+        let installAPKArguments = installAPK.executable == "/usr/bin/env" ? Array(installAPK.arguments.dropFirst()) : installAPK.arguments
+
+        try expectEqual(
+            firstArguments(installVariant.arguments, 3),
+            ["ANDROID_SERIAL=192.168.1.10:42177", wrapper.path, ":app:installDebug"],
+            "Launch installation should bind Gradle's install task to the selected ADB serial."
+        )
+        try expectEqual(
+            installAPKArguments,
+            ["-s", "192.168.1.10:42177", "install", "-r", "/tmp/app-debug.apk"],
+            "APK install should use replacement mode for both absent and installed apps."
+        )
+    }
+
     runner.run("ToolCommand preview quotes arguments with spaces") {
         let command = ToolCommand(
             title: "Preview",

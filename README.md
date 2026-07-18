@@ -12,7 +12,7 @@ On launch, the app intentionally starts without a project loaded. Workspace path
 - Rule-based planning engine with the same MVP coverage from the Android prototype
 - Ask the Assistant model orchestration with visible provider-sharing consent, Auto/Fast/Deep/Private routing, TaskDroid Android Planner integration, project file retrieval, OpenAI Responses API fallback, embedding-assisted context ranking, and local fallback when model services are unavailable
 - Launch readiness controls for local crash reporting, telemetry opt-in, license activation status, first-run onboarding, support bundle export, and packaged release notes
-- Local command runner for `./gradlew testDebugUnitTest`, `./gradlew assembleDebug`, `./gradlew connectedDebugAndroidTest`, `adb devices`, `adb logcat`, app launch, and log clearing
+- Local command runner for `./gradlew testDebugUnitTest`, `./gradlew assembleDebug`, `./gradlew connectedDebugAndroidTest`, `adb devices`, `adb logcat`, targeted app install-and-launch, and log clearing
 - Safety gates for workspace boundaries, scoped diffs, undo checkpoints, secret scanning, and confirmation-required device/configuration actions
 - Smoke-test suite for planner routing, safety policies, Android workspace scanning, command construction, catalog coverage, and process execution
 

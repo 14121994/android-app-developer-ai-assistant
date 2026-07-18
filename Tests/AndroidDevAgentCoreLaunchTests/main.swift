@@ -312,6 +312,37 @@ func runCommandFactoryTests(runner: inout LaunchTestRunner) {
         try expectEqual(launch.arguments, ["-s", "emulator-5554", "shell", "am", "start", "-n", "com.example.sample/.MainActivity"], "Launch command should preserve selected device.")
     }
 
+    runner.run("install variant targets the selected device and supports replacement") {
+        let root = try makeTemporaryDirectory("gradle-install")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let wrapper = root.appendingPathComponent("gradlew")
+        try write("#!/bin/sh\n", to: wrapper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wrapper.path)
+
+        let installVariant = AndroidToolCommandFactory.installVariant(
+            rootPath: root.path,
+            task: ":app:installDebug",
+            deviceSerial: "emulator-5554"
+        )
+        let installAPK = AndroidToolCommandFactory.installApp(
+            rootPath: root.path,
+            apkPath: "/tmp/sample debug.apk",
+            deviceSerial: "emulator-5554"
+        )
+
+        try expectEqual(installVariant.executable, "/usr/bin/env", "Targeted Gradle install should use env to bind ANDROID_SERIAL.")
+        try expectEqual(
+            installVariant.arguments,
+            ["ANDROID_SERIAL=emulator-5554", wrapper.path, ":app:installDebug", "--no-daemon", "--console=plain"],
+            "Gradle install should build and install the selected variant on only the selected device."
+        )
+        try expectEqual(
+            installAPK.arguments,
+            ["-s", "emulator-5554", "install", "-r", "/tmp/sample debug.apk"],
+            "Direct APK installation should use -r so it works for fresh and existing installations."
+        )
+    }
+
     runner.run("ToolCommand preview quotes arguments with spaces") {
         let command = ToolCommand(title: "Preview", executable: "/usr/bin/env", arguments: ["bash", "-lc", "echo hello world"], workingDirectory: "/tmp/project")
         try expectEqual(command.preview, "/usr/bin/env bash -lc 'echo hello world'", "Preview should quote arguments with spaces.")

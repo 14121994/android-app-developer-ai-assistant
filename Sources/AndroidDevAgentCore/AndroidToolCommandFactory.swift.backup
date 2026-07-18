@@ -1,29 +1,21 @@
 import Foundation
 
 public enum AndroidToolCommandFactory {
+    
     public static func gradleTask(title: String, rootPath: String, task: String) -> ToolCommand {
         gradleCommand(title: title, rootPath: rootPath, task: task)
     }
 
-    public static func installVariant(rootPath: String, task: String, deviceSerial: String) -> ToolCommand {
-        gradleCommand(
-            title: "Install App",
-            rootPath: rootPath,
-            task: task,
-            deviceSerial: deviceSerial
-        )
-    }
-
     public static func gradleTest(rootPath: String) -> ToolCommand {
-        gradleCommand(title: "Run Unit Tests", rootPath: rootPath, task: "testDebugUnitTest")
+        gradleCommand(title: title, rootPath: rootPath, task: "testDebugUnitTest")
     }
 
     public static func assembleDebug(rootPath: String) -> ToolCommand {
-        gradleCommand(title: "Assemble Debug", rootPath: rootPath, task: "assembleDebug")
+        gradleCommand(title: title, rootPath: rootPath, task: "assembleDebug")
     }
 
     public static func connectedAndroidTest(rootPath: String) -> ToolCommand {
-        gradleCommand(title: "Run Connected Android Tests", rootPath: rootPath, task: "connectedDebugAndroidTest")
+        gradleCommand(title: title, rootPath: rootPath, task: "connectedDebugAndroidTest")
     }
 
     public static func listDevices(rootPath: String) -> ToolCommand {
@@ -176,48 +168,14 @@ public enum AndroidToolCommandFactory {
         )
     }
 
-    private static func gradleCommand(
-        title: String,
-        rootPath: String,
-        task: String,
-        deviceSerial: String? = nil
-    ) -> ToolCommand {
+    private static func gradleCommand(title: String, rootPath: String, task: String) -> ToolCommand {
         let wrapper = URL(fileURLWithPath: rootPath).appendingPathComponent("gradlew").path
         let fileManager = FileManager.default
-        let taskArguments = [task, "--no-daemon", "--console=plain"]
-        let serial = deviceSerial?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        if !serial.isEmpty {
-            let environmentAssignment = "ANDROID_SERIAL=\(serial)"
-            if fileManager.isExecutableFile(atPath: wrapper) {
-                return ToolCommand(
-                    title: title,
-                    executable: "/usr/bin/env",
-                    arguments: [environmentAssignment, wrapper] + taskArguments,
-                    workingDirectory: rootPath
-                )
-            }
-            if fileManager.fileExists(atPath: wrapper) {
-                return ToolCommand(
-                    title: title,
-                    executable: "/usr/bin/env",
-                    arguments: [environmentAssignment, "/bin/sh", "./gradlew"] + taskArguments,
-                    workingDirectory: rootPath
-                )
-            }
-            return ToolCommand(
-                title: title,
-                executable: "/usr/bin/env",
-                arguments: [environmentAssignment, "gradle"] + taskArguments,
-                workingDirectory: rootPath
-            )
-        }
-
         if fileManager.isExecutableFile(atPath: wrapper) {
             return ToolCommand(
                 title: title,
                 executable: wrapper,
-                arguments: taskArguments,
+                arguments: [task, "--no-daemon", "--console=plain"],
                 workingDirectory: rootPath
             )
         }
@@ -225,14 +183,14 @@ public enum AndroidToolCommandFactory {
             return ToolCommand(
                 title: title,
                 executable: "/bin/sh",
-                arguments: ["./gradlew"] + taskArguments,
+                arguments: ["./gradlew", task, "--no-daemon", "--console=plain"],
                 workingDirectory: rootPath
             )
         }
         return ToolCommand(
             title: title,
             executable: "/usr/bin/env",
-            arguments: ["gradle"] + taskArguments,
+            arguments: ["gradle", task, "--no-daemon", "--console=plain"],
             workingDirectory: rootPath
         )
     }

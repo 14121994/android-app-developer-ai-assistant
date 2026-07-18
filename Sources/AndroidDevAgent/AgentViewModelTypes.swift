@@ -65,7 +65,7 @@ enum AndroidCommandKind: String, CaseIterable, Identifiable {
         case .devices: return 20
         case .logcat: return 20
         case .clearLogcat: return 20
-        case .launch: return 25
+        case .launch: return 180
         }
     }
 
@@ -76,7 +76,7 @@ enum AndroidCommandKind: String, CaseIterable, Identifiable {
         case .clearLogcat:
             return "This clears Logcat on the selected device."
         case .launch:
-            return "This launches the configured package/activity on the selected device."
+            return "This builds and installs the selected variant on the selected device, replacing an existing installation, then launches the configured package/activity."
         default:
             return "This command will run in the selected project."
         }

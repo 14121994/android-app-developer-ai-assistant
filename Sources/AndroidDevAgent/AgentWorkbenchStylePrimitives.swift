@@ -393,7 +393,7 @@ extension AndroidCommandKind {
         case .clearLogcat:
             return "Clear Logcat on the selected device."
         case .launch:
-            return "Launch the configured package and activity."
+            return "Install the selected variant, then launch its configured package and activity."
         }
     }
 }

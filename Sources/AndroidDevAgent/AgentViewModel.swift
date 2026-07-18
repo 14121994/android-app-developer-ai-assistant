@@ -624,6 +624,11 @@ final class AgentViewModel: ObservableObject {
         savePromptToHistory(prompt)
         lastRunnableCommandKind = kind
 
+        if kind == .launch {
+            executeInstallAndLaunch()
+            return
+        }
+
         let command = commandFor(kind)
         let startedAt = Date()
         let commandID = UUID()
@@ -676,6 +681,122 @@ final class AgentViewModel: ObservableObject {
             isRunningCommand = false
             lastCommandTitle = "Idle"
         }
+    }
+
+    private func executeInstallAndLaunch() {
+        let installTask = gradleTaskName(prefix: "install", suffix: "")
+        let installCommand = AndroidToolCommandFactory.installVariant(
+            rootPath: projectPath,
+            task: installTask,
+            deviceSerial: selectedDeviceID
+        )
+        let launchCommand = commandFor(.launch)
+        let workflowTitle = "Install and Launch App"
+        let startedAt = Date()
+        let commandID = UUID()
+
+        currentCommandID = commandID
+        lastCommandTitle = workflowTitle
+        runningCommandKind = .launch
+        isRunningCommand = true
+        lastCommandSummary = CommandRunSummary(
+            title: workflowTitle,
+            status: "Running",
+            detail: "Running \(installTask) on \(selectedDeviceID), then launching \(packageNameForCommands)/\(launchActivity).",
+            severity: "running",
+            duration: "0s"
+        )
+        selectedSessionTab = .checks
+        appendOutput("$ \(installCommand.preview)\n")
+
+        Task {
+            let installResult = await commandRunner.run(
+                installCommand,
+                timeoutSeconds: AndroidCommandKind.launch.timeoutSeconds
+            )
+            guard self.currentCommandID == commandID else { return }
+
+            let installStatus = commandExecutionStatus(installResult)
+            appendCommandResultToOutput(installResult, status: installStatus)
+            lastStandardOutput = installResult.standardOutput
+            lastStandardError = installResult.standardError
+
+            guard installResult.succeeded else {
+                let elapsed = Date().timeIntervalSince(startedAt)
+                let installSummary = summarizeCommandResult(installResult, status: installStatus, elapsed: elapsed)
+                lastCommandSummary = CommandRunSummary(
+                    title: workflowTitle,
+                    status: installSummary.status,
+                    detail: "Launch was skipped because \(installSummary.detail)",
+                    severity: installSummary.severity,
+                    duration: installSummary.duration
+                )
+                lastStatusMessage = lastCommandSummary?.detail ?? "App installation failed; launch was skipped."
+                selectedSessionTab = .diagnostics
+                finishInstallAndLaunchWorkflow()
+                return
+            }
+
+            appendOutput("$ \(launchCommand.preview)\n")
+            let launchResult = await commandRunner.run(launchCommand, timeoutSeconds: 25)
+            guard self.currentCommandID == commandID else { return }
+
+            let launchStatus = commandExecutionStatus(launchResult)
+            appendCommandResultToOutput(launchResult, status: launchStatus)
+            lastStandardOutput = [installResult.standardOutput, launchResult.standardOutput]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+            lastStandardError = [installResult.standardError, launchResult.standardError]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+
+            let elapsed = Date().timeIntervalSince(startedAt)
+            if launchResult.succeeded {
+                lastCommandSummary = CommandRunSummary(
+                    title: workflowTitle,
+                    status: "Succeeded",
+                    detail: "Installed \(selectedModule) \(selectedVariant) on \(selectedDeviceID) and launched \(packageNameForCommands)/\(launchActivity).",
+                    severity: "ready",
+                    duration: String(format: "%.1fs", elapsed)
+                )
+                selectedSessionTab = .checks
+            } else {
+                let launchSummary = summarizeCommandResult(launchResult, status: launchStatus, elapsed: elapsed)
+                lastCommandSummary = CommandRunSummary(
+                    title: workflowTitle,
+                    status: launchSummary.status,
+                    detail: "App installation succeeded, but \(launchSummary.detail)",
+                    severity: launchSummary.severity,
+                    duration: launchSummary.duration
+                )
+                selectedSessionTab = .diagnostics
+            }
+            lastStatusMessage = lastCommandSummary?.detail ?? "Install and launch finished."
+            finishInstallAndLaunchWorkflow()
+        }
+    }
+
+    private func commandExecutionStatus(_ result: CommandResult) -> String {
+        if result.succeeded { return "succeeded" }
+        if result.exitCode == -2 { return "timed out" }
+        return "failed with exit code \(result.exitCode)"
+    }
+
+    private func appendCommandResultToOutput(_ result: CommandResult, status: String) {
+        appendOutput("\n[\(result.command.title) \(status)]\n")
+        if !result.standardOutput.isEmpty {
+            appendOutput(result.standardOutput)
+        }
+        if !result.standardError.isEmpty {
+            appendOutput("\n" + result.standardError)
+        }
+        appendOutput("\n")
+    }
+
+    private func finishInstallAndLaunchWorkflow() {
+        runningCommandKind = nil
+        isRunningCommand = false
+        lastCommandTitle = "Idle"
     }
 
     func clearOutput() {
@@ -2860,7 +2981,7 @@ final class AgentViewModel: ObservableObject {
         if launchActivity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return DiagnosticRow(title: "Activity needed", detail: "Set a launch activity, for example .MainActivity.", symbol: "play.slash", severity: "warning")
         }
-        return DiagnosticRow(title: "Launch ready", detail: "\(packageNameForCommands)/\(launchActivity)", symbol: "play.circle", severity: selectedDeviceID.isEmpty ? "neutral" : "ready")
+        return DiagnosticRow(title: "Install and launch ready", detail: "\(gradleTaskName(prefix: "install", suffix: "")) → \(packageNameForCommands)/\(launchActivity)", symbol: "play.circle", severity: selectedDeviceID.isEmpty ? "neutral" : "ready")
     }
 
     var recommendedActionTitle: String {
@@ -4038,6 +4159,7 @@ final class AgentViewModel: ObservableObject {
             lines.append("Device: \(selectedDeviceID.isEmpty ? "none selected" : selectedDeviceID)")
         }
         if kind == .launch {
+            lines.append("Install task: \(gradleTaskName(prefix: "install", suffix: "")) (fresh install or replacement)")
             lines.append("Launch target: \(packageNameForCommands)/\(launchActivity)")
         }
         lines.append("The command output will be written to the Command Console.")
@@ -4671,7 +4793,8 @@ extension AgentViewModel {
             AndroidDevAgentLaunchReadiness.latestSupportUploadStatusKey,
             AndroidDevAgentLaunchReadiness.releaseNotesPathKey,
             AndroidDevAgentLaunchReadiness.crashUploadConsentKey,
-            AndroidDevAgentLaunchReadiness.supportUploadConsentKey
+            AndroidDevAgentLaunchReadiness.supportUploadConsentKey,
+            "AndroidDevAgentRecentProjects"
         ]
         let previousValues = Dictionary(uniqueKeysWithValues: keys.map { ($0, defaults.object(forKey: $0)) })
         defer {

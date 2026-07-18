@@ -73,6 +73,8 @@ Supported operations include:
 - `adb shell pm list instrumentation`
 - `adb shell am force-stop`
 
+Launch is a two-step workflow. It runs the selected module's Gradle `install<Variant>` task with `ANDROID_SERIAL` set to the selected ADB device, then runs `adb shell am start` only after installation succeeds. The install task is always run, so it handles both first installation and replacement of an existing app without relying on an installed-package preflight check.
+
 ## Risk Gates
 
 `AndroidCommandKind` defines device requirements, confirmation requirements, timeout seconds, and risk summaries.
@@ -85,7 +87,7 @@ Supported operations include:
 | Devices | No | No | 20s |
 | Logcat | Yes | No | 20s |
 | Clear Logs | Yes | Yes | 20s |
-| Launch | Yes | Yes | 25s |
+| Launch | Yes | Yes | 180s install, then 25s launch |
 
 ## Cancellation and Timeouts
 
@@ -118,4 +120,3 @@ Screenshots use `runBinary` so PNG bytes do not pass through lossy UTF-8 convers
 - Missing device: view model blocks device-required commands before execution.
 - Risky device action: view model creates a confirmation object before running.
 - Long output: view model truncates UI output but keeps summaries and export paths.
-
